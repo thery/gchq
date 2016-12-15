@@ -104,10 +104,12 @@ type puzzle = row array
 type constraint_row = int
 type disj_row = constraint_row list 
 
+let bit v i = (v lsr i) land 1 
+
 let print_row row = 
   for i = 0 to size - 1 do
-    let k = (row.known lsr i) land 1 in
-    let c = (row.color lsr i) land 1 in
+    let k = bit row.known i in
+    let c = bit row.color i in
     Format.printf "%s "
       (if k = 1 then
          if c = 1 then "B" else "W"
@@ -133,21 +135,12 @@ let filter row (disj_row:disj_row) =
 exception UnSat
 
 let print_disj disj = 
-  List.iter (fun c -> 
-    for i = 0 to size - 1 do
-      let c = (c lsr i) land 1 in
-      Format.printf "%s " (if c = 1 then "B" else "W")
-    done;
-    Format.printf "@.") disj
+  List.iter (fun c -> print_row {known = (-1); color = c }) disj
         
 let update_row row disj_row1 = 
-(*  Format.printf "|disj_row| = %i@." (List.length disj_row1); *)
   let disj_row = filter row disj_row1 in
   match disj_row with
-  | [] -> 
-(*    print_row row;
-    print_disj disj_row1; *)
-    raise UnSat
+  | [] -> raise UnSat
   | c :: disj_row ->
     let rec aux k disj_row = 
       match disj_row with
@@ -163,18 +156,13 @@ let update_row row disj_row1 =
 let update_lines puzzle constraints =
   let progress = ref false in
   for i = 0 to size - 1 do
-(*    Format.printf "update_line %i@." i;  *)
     let row = puzzle.(i) in
     let row', disj = update_row puzzle.(i) constraints.(i) in
     constraints.(i) <- disj;
-    if  row.known <> row'.known then
-      (
-(*        Format.printf "line %i progress@." i;
-        print_row row;
-        print_row row';
-        Format.printf "@."; *)
-        puzzle.(i) <- row'; 
-        progress := true)
+    if  row.known <> row'.known then begin
+      puzzle.(i) <- row'; 
+      progress := true
+    end
   done;
   !progress
 
@@ -183,21 +171,21 @@ let get_col puzzle i =
   let c = ref initial_row.color  in
   for j = 0 to size - 1 do
     let row = puzzle.(j) in
-    k := !k lor (((row.known lsr i) land 1) lsl j);
-    c := !c lor (((row.color lsr i) land 1) lsl j)
+    k := !k lor ((bit row.known i) lsl j);
+    c := !c lor ((bit row.color i) lsl j)
   done; 
   mk_row !k !c
 
 let set_col puzzle i row = 
   for j = 0 to size - 1 do
-    let k = ((row.known lsr j) land 1) in
+    let k = bit row.known j in
     if k = 1 then
       let line = puzzle.(j) in
       let i1 = 1 lsl i in
       let nk = line.known lor i1 in
       let nc = 
         (line.color land (lnot i1)) lor 
-          (((row.color lsr j) land 1) lsl i) in
+          ((bit row.color j) lsl i) in
       let nline = mk_row nk nc in
       puzzle.(j) <- nline
   done
@@ -205,22 +193,13 @@ let set_col puzzle i row =
 let update_cols puzzle constraints =
   let progress = ref false in
   for i = 0 to size - 1 do
-(*    Format.printf "update_col %i@." i;  
-    print puzzle; *)
     let row = get_col puzzle i in
-(*    Format.printf "col = ";
-    print_row row; *)
     let row', disj = update_row row constraints.(i) in
     constraints.(i) <- disj;
-    if row.known <> row'.known then 
-      ( 
-(*        Format.printf "column %i progress@." i;
-        print_row row;
-        print_row row';
-        Format.printf "@."; *)
-        set_col puzzle i row'; 
-        progress := true;
-      )
+    if row.known <> row'.known then begin
+      set_col puzzle i row'; 
+      progress := true
+    end
   done;
   !progress
 
@@ -230,50 +209,45 @@ let check_full puzzle =
   Array.iter (fun row -> forall := !forall && row.known = (-1)) puzzle;
   !forall
 
-let print_row row = 
-  for i = 0 to size - 1 do
-    let k = (row.known lsr i) land 1 in
-    let c = (row.color lsr i) land 1 in
-    Format.printf "%s "
-      (if k = 1 then
-         if c = 1 then "B" else "W"
-       else "_")
-  done;
-  Format.printf "\n"
-
-let print puzzle = 
-  Array.iter print_row puzzle
-
 let solve puzzle lconstr cconstr =
   let rec aux i = 
     Format.printf "i = %i@." i;
     let p1 = update_lines puzzle lconstr in
     let p2 = update_cols  puzzle cconstr in
-(*    print puzzle;  *)
     if p1 || p2 then aux (i+1) in
   aux 0;
   if check_full puzzle then Format.printf "OK@."
   else  Format.printf "ERROR@.";
   print puzzle
 
-    
 (* ------------------------------------------------------- *)
 
-
 let sum = List.fold_left (+) 0
-
-
 
 type cel = 
 | W 
 | B 
 
-let partial = 
-  Array.init size (fun i -> Array.make size None)
+let get_color puzzle i j = 
+  let row = puzzle.(j) in
+  let k = bit row.known i in
+  if k = 1 then
+    let c = bit row.color i in
+    if c = 1 then Some B else Some W
+  else None
 
-let add_color get_ij c (k,colors) =
+let set_color puzzle i j c = 
+  let row = puzzle.(j) in
+  let k = row.known lor (1 lsl i) in
+  let c = 
+    if c = B then row.color lor (1 lsl i)
+    else row.color land (lnot (1 lsl i)) in
+  let row = { known = k; color = c } in
+  puzzle.(j) <- row
+
+let add_color puzzle get_ij c (k,colors) =
   let i,j = get_ij k in
-  match partial.(j).(i) with
+  match get_color puzzle i j with
   | Some c' when c <> c' -> None
   | _ ->
     let colors = 
@@ -281,15 +255,14 @@ let add_color get_ij c (k,colors) =
       else colors in
     Some (k-1, colors)
 
-
-let rec add_colors get_ij c n kcolors = 
+let rec add_colors puzzle get_ij c n kcolors = 
   if n = 0 then Some kcolors 
   else
-    match add_color get_ij c kcolors with
+    match add_color puzzle get_ij c kcolors with
     | None -> None
-    | Some kcolors -> add_colors get_ij c (n-1) kcolors
+    | Some kcolors -> add_colors puzzle get_ij c (n-1) kcolors
   
-let doit s n get_ij l = 
+let doit puzzle get_ij l = 
   let n_b = sum l in
   let min_w = List.length l - 1 in
   let extra_w = size - n_b - min_w in
@@ -300,21 +273,20 @@ let doit s n get_ij l =
     | [] -> disj_extra := snd kcolors :: !disj_extra
     | b::l -> 
       for i = 0 to extra_w do
-        match add_colors get_ij W (min+i) kcolors with
+        match add_colors puzzle get_ij W (min+i) kcolors with
         | None -> ()
         | Some kcolors ->
-          match add_colors get_ij B b kcolors with
+          match add_colors puzzle get_ij B b kcolors with
           | None -> ()
           | Some kcolors -> aux kcolors l 1 (extra_w - i)
       done in
   aux (size-1, 0) (List.rev l) 0 extra_w;
-(*  Format.eprintf "%s %i %i@." s n (List.length !disj_extra); *)
   !disj_extra
 
-let doline j = doit "line" j (fun i -> (i, j)) 
-let docol i  = doit "col " i (fun j -> (i, j))
+let doline puzzle j = doit puzzle (fun i -> (i, j)) 
+let docol puzzle i  = doit puzzle (fun j -> (i, j))
 
-let setit to_ij l = 
+let setit puzzle to_ij l = 
   let n_b = sum l in
   let min_w = List.length l - 1 in
   assert (0 <= n_b && n_b <= size);
@@ -328,56 +300,29 @@ let setit to_ij l =
         let l, c = 
           if n = 0 then l, W else (n-1::l, B) in
         let i,j = to_ij k in
-        partial.(j).(i) <- Some c;
+        set_color puzzle i j c;
         set (k+1) l in
     set 0 l
 
-let setline j = setit (fun i -> i, j) 
-let setcol i  = setit (fun j -> i, j)
+let setline puzzle j = setit puzzle (fun i -> i, j) 
+let setcol puzzle i  = setit puzzle (fun j -> i, j)
 
-let init_partial () = 
+let init_partial puzzle = 
   List.iter (fun (is,j) ->
-    List.iter (fun i -> partial.(j).(i) <- Some B) is) know_black;
-  for i = 0 to size-1 do (setline i) lines.(i) done;
-  for i = 0 to size-1 do (setcol i) columns.(i) done 
- 
-let print_partial () =
-  for j=0 to size - 1 do
-    for i=0 to size - 1 do
-      match partial.(j).(i) with
-      | None   -> Format.printf "_ "
-      | Some B -> Format.printf "B "
-      | Some W -> Format.printf "W "
-    done;
-    Format.printf "@."
-  done
-
-let partial2puzzle () =
-  let puzzle = Array.make size initial_row in
-  for j = 0 to size - 1 do
-    let row = puzzle.(j) in
-    let k = ref row.known in
-    let c = ref row.color in
-    for i = 0 to size - 1 do
-      match partial.(j).(i) with
-      | None -> ()
-      | Some cij ->
-        k := !k lor (1 lsl i);
-        if cij = B then c := !c lor (1 lsl i);
-    done;
-    puzzle.(j) <- mk_row !k !c
-  done;
-  puzzle
-
-let _ = 
-  init_partial (); print_partial ();
-  let puzzle = partial2puzzle () in
-  Format.printf "@.";
+    List.iter (fun i -> set_color puzzle i j B) is) know_black;
   print puzzle;
   Format.printf "@.";
+  for i = 0 to size-1 do (setline puzzle i) lines.(i) done;
+  for i = 0 to size-1 do (setcol puzzle i) columns.(i) done 
+ 
 
-  let lconstr = Array.init size (fun i -> doline i lines.(i)) in
-  let cconstr = Array.init size (fun i -> docol i columns.(i))  in
+let _ = 
+  let puzzle = Array.make size initial_row in
+  init_partial puzzle;
+  print puzzle;
+  Format.printf "@.";
+  let lconstr = Array.init size (fun i -> doline puzzle i lines.(i)) in
+  let cconstr = Array.init size (fun i -> docol puzzle i columns.(i))  in
   try 
     solve puzzle lconstr cconstr 
   with UnSat ->
