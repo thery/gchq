@@ -226,7 +226,7 @@ let init_partial () =
 
 
 (* Avec simplication *)
-(*
+
 let _ = 
   init_partial ();
   for i = 0 to Array.length partial - 1 do
@@ -237,16 +237,16 @@ let _ =
   done;
   for i = 0 to size-1 do (doline i) lines.(i) done;
   for i = 0 to size-1 do (docol i) columns.(i) done
-*)
   
 (* Sans simplification *)
+(*
 let _ = 
   let pp_known_black i j = Format.printf "%i 0\n" (sign_color B * var_of_ij i j) in
   let pp_l_black (is,j) = List.iter (fun i -> pp_known_black i j) is in
   List.iter pp_l_black know_black;
   for i = 0 to size-1 do (doline i) lines.(i) done;
   for i = 0 to size-1 do (docol i) columns.(i) done 
-
+*)
 (*
 Avec simplification 
 generation : 0.717s
