@@ -7,7 +7,6 @@ From SMTCoq Require  Int63.
 Require Import Int31 ZArith.
 From mathcomp Require Import all_ssreflect.
 
-Locate int.
 Local Notation int := Int63Native.int.
 
 (*****************************************************************************)
@@ -366,15 +365,24 @@ Qed.
 Definition get_xy (s : sol) i j :=
   nth false (get_row s i) j.
 
-Definition is_square {A: Type} (p : seq (seq A)) :=
-  [forall i : 'I_(size p), size (nth [::] p i) == size p].
+Definition is_square {A: Type} (n : nat) (p : seq (seq A)) :=
+  (size p == n) && [forall i : 'I_n, size (nth [::] p i) == n].
 
-Lemma get_row_size s i :
-   is_square s ->
-   i < size s -> size (get_row s i) = size s.
+Lemma get_row_size n s i :
+   is_square n s ->
+   i < n -> size (get_row s i) = n.
 Proof.
 move=> Hwf Li.
-by have /forallP/(_ (Ordinal Li))/eqP := Hwf.
+by have /andP[_ /forallP/(_ (Ordinal Li))/eqP] := Hwf.
+Qed.
+
+Lemma get_col_size n s i :
+   is_square n s ->
+   i < n -> size (get_col s i) = n.
+Proof.
+move=> Hwf Li.
+rewrite size_map.
+by have /andP[/eqP->] := Hwf.
 Qed.
 
 (*****************************************************************************)
@@ -389,30 +397,30 @@ Definition psol := seq (seq (option colour)).
 (* Getting a row *)
 Definition pget_row (s : psol) i := nth [::] s i.
 
-Lemma pget_row_size s i :
-  is_square s -> i < size s -> size (pget_row s i) = size s.
+Lemma pget_row_size n s i :
+  is_square n s -> i < n -> size (pget_row s i) = n.
 Proof.
 move=> Hwf Li.
-by have /forallP/(_ (Ordinal Li))/eqP := Hwf.
+by have /andP[_ /forallP/(_ (Ordinal Li))/eqP] := Hwf.
 Qed.
 
 (* Setting a row *)
 Definition pset_row (s : psol) i v := 
   [seq (if j == i then v else pget_row s j) | j <- iota 0 (size s)].
 
-Lemma pset_row_square s i v :
- is_square s -> 
- (i < size s -> size v = size s) -> is_square (pset_row s i v).
+Lemma pset_row_square n s i v :
+ is_square n s -> 
+ (i < n -> size v = n) -> is_square n (pset_row s i v).
 Proof.
-move=> H Hs; apply/forallP=> x; apply/eqP.
-rewrite [RHS]size_map size_iota.
-have Lx : x < size s.
-  by case: x => /= x1; rewrite size_map size_iota.
-rewrite (nth_map 0); last by rewrite size_iota.
-rewrite nth_iota // add0n.
+move=> H Hs; have /andP[/eqP H1 /forallP H2] := H.
+apply/andP; split.
+  by rewrite size_map size_iota H1.
+apply/forallP=> j; apply/eqP.
+rewrite (nth_map 0); last by rewrite size_iota H1.
+rewrite nth_iota ?add0n; last by rewrite H1.
 case: eqP => // xDi.
   by apply: Hs; rewrite -xDi.
-by rewrite pget_row_size.
+by apply: pget_row_size.
 Qed.
  
 Lemma pset_row_correct s i j v :
@@ -430,7 +438,7 @@ rewrite [LHS](nth_map 0) // !(nth_iota 0) ?size_iota //.
 by rewrite !add0n eq_sym.
 Qed.
 
-(* Getting a colum *)
+(* Getting a columm *)
 Definition pget_col (s : psol) j := [seq nth None l j | l <- s].
 
 (* Setting a column *)
@@ -440,26 +448,27 @@ Definition pset_col (s : psol) j v :=
           j1 <- iota 0 (size l)])
        | i <- iota 0 (size s)].
 
-Lemma pset_col_square s j v :
- is_square s -> size v = size s -> is_square (pset_col s j v).
+Lemma pset_col_square n s j v :
+ is_square n s -> size v = n -> is_square n (pset_col s j v).
 Proof.
-move=> H Hs; apply/forallP=> x; apply/eqP.
-rewrite [RHS]size_map size_iota.
-have Lx : x < size s.
-  by case: x => /= x1; rewrite size_map size_iota.
-rewrite (nth_map 0); last by rewrite size_iota.
-rewrite nth_iota // add0n.
-by rewrite size_map size_iota pget_row_size.
+move=> H Hs; have /andP[/eqP H1 /forallP H2] := H.
+apply/andP; split.
+  by rewrite size_map size_iota H1.
+apply/forallP=> i; apply/eqP.
+rewrite (nth_map 0); last by rewrite size_iota H1.
+rewrite nth_iota ?H1 ?add0n //=.
+rewrite size_map size_iota.
+by apply: pget_row_size.
 Qed.
 
-Lemma pset_col_correct s i j v :
- size v = size s -> is_square s -> j < size s -> 
+Lemma pset_col_correct n s i j v :
+ size v = n -> is_square n s -> j < n -> 
  pget_col (pset_col s j v) i = 
               if i == j then v else pget_col s i.
 Proof.
-move=> Hs Hwf Ls.
+move=> Hs Hwf Ls; have /andP[/eqP H1wf /forallP H2wf] := Hwf.
 apply: (@eq_from_nth _ None) => [|i1 Hi1].
-  by case: eqP => _; rewrite !size_map size_iota ?Hs.
+  by case: eqP => _; rewrite !size_map size_iota // Hs.
 have /(nth_iota 0) := Hi1.
 rewrite add0n => {1}<-.
 rewrite [LHS](nth_map [::]) // !(nth_iota 0) ?size_iota //; last first.
@@ -469,20 +478,22 @@ have F : 0 + i1 < size (iota 0 (size s)).
 rewrite (nth_map 0 [::] _ F) /=.
 rewrite nth_iota !add0n; last first.
   by move: Hi1; rewrite !size_map size_iota.
-have Oi1 : i1 < size s.
-  by move: Hi1; rewrite !size_map size_iota.
+have Oi1 : i1 < n.
+  by move: Hi1; rewrite !size_map size_iota H1wf.
 have [Ls1|Ls1] := leqP (size s) i.
   rewrite [LHS]nth_default ?size_map ?size_iota //; last first.
-    by have /forallP/(_ (Ordinal Oi1))/eqP-> := Hwf.
+    by rewrite (pget_row_size n) // -H1wf.
   case: eqP=> H.
-    by move: Ls1; rewrite H leqNgt Ls.
-  rewrite (nth_map [::]) // nth_default //.
-  by have /forallP/(_ (Ordinal Oi1))/eqP-> := Hwf.
+    by move: Ls1; rewrite H1wf H leqNgt Ls.
+  rewrite (nth_map [::]) ?H1wf // nth_default //.
+  have /eqP-> := H2wf (Ordinal Oi1).
+  by rewrite -H1wf.
+have iLn : i < n by rewrite -H1wf.
 rewrite (nth_map 0); last first.
-  by rewrite size_iota pget_row_size.
-rewrite nth_iota ?pget_row_size // add0n.
+   by rewrite size_iota (pget_row_size n).
+rewrite nth_iota ?(pget_row_size n) // add0n.
 case: eqP => // /eqP iDj.
-by rewrite (nth_map [::]).
+by rewrite (nth_map [::]) // H1wf.
 Qed.
 
 (* Getting  a cell *)
@@ -493,33 +504,33 @@ Definition pset_xy (s : psol) i j v :=
    (let l := pget_row s i in 
          [seq (if j1 == j then v else nth None l j1) | j1 <- iota 0 (size l)]).
 
-Lemma pset_xy_square s i j v :
-  is_square s -> is_square (pset_xy s i j v).
+Lemma pset_xy_square n s i j v :
+  is_square n s -> is_square n (pset_xy s i j v).
 Proof.
 move=> H.
 apply: pset_row_square => // Hi.
-by rewrite size_map size_iota pget_row_size.
+by rewrite size_map size_iota (pget_row_size n).
 Qed.
 
-Lemma pset_xy_correct s i j i1 j1 v :
-  is_square s -> i < size s -> j < size s ->
+Lemma pset_xy_correct n s i j i1 j1 v :
+  is_square n s -> i < n -> j < n ->
   pget_xy (pset_xy s i j v) i1 j1 = 
     if (i == i1) && (j == j1) then v else pget_xy s i1 j1.
 Proof.
-move=> Hwf Li Lj.
+move=> Hwf Li Lj; have /andP[/eqP H1wf /forallP H2wf] := Hwf.
 rewrite /pget_xy /pset_xy.
-rewrite pset_row_correct //.
+rewrite pset_row_correct //; last by rewrite H1wf.
 case: eqP => // <-.
-case: (leqP (size s) j1) => H; last first.
+case: (leqP n j1) => H; last first.
   rewrite (nth_map 0); last first.
-    by rewrite size_iota pget_row_size.
-  rewrite nth_iota ?pget_row_size // add0n eq_sym.
+    by rewrite size_iota (pget_row_size n).
+  rewrite nth_iota ?(pget_row_size n) // add0n eq_sym.
   by case: eqP.
 rewrite nth_default; last first.
-  by rewrite size_map size_iota pget_row_size.
+  by rewrite size_map size_iota (pget_row_size n).
 case: eqP => /= H1.
   by move: H; rewrite -H1 leqNgt Lj.
-by rewrite nth_default ?pget_row_size.
+by rewrite nth_default ?(pget_row_size n).
 Qed.
 
 Lemma pget_row_col s i j :
@@ -532,25 +543,27 @@ by rewrite nth_default // size_map.
 Qed.
 
 (* a partial solution implies a solution *)
-Definition entail (ps : psol) (s : sol) :=
-  [forall i : 'I_(size ps),
-   forall j : 'I_(size ps),
-   forall b : bool,
-      (pget_xy ps i j == Some b) ==> (get_xy s i j == b)].
+Definition entail n (ps : psol) (s : sol) :=
+  [&& is_square n ps, is_square n s &
+    [forall i : 'I_n,
+     forall j : 'I_n,
+     forall b : bool,
+      (pget_xy ps i j == Some b) ==> (get_xy s i j == b)]].
 
-Lemma entailP ps s :
+Lemma entailP n ps s :
   reflect 
-   (forall i j b, i < size ps -> j < size ps -> 
-       pget_xy ps i j = Some b -> get_xy s i j = b)
-   (entail ps s).
+   [/\ is_square n ps, is_square n s &
+    forall i j b, i < n -> j < n -> 
+       pget_xy ps i j = Some b -> get_xy s i j = b]
+   (entail n ps s).
 Proof.
-apply: (iffP forallP) => 
-    [H i j b Hi Hj H1|H x].
-  have /forallP/(_ (Ordinal Hj))/forallP/(_ b) := H (Ordinal Hi).
-  move/implyP=> H2.
-  by apply/eqP/H2/eqP.
-apply/forallP=> y; apply/forallP=> b; apply/implyP=> /eqP.
-by move=> /(H x y b (ltn_ord x) (ltn_ord y))->.
+apply: (iffP and3P) => [[H1 H2 /forallP H3]|[H1 H2 H3]]; split=> //.
+  move=> i j b Hi Hj H4.
+  have /forallP/(_ (Ordinal Hj))/forallP/(_ b) := H3 (Ordinal Hi).
+  move/implyP=> H5.
+  by apply/eqP/H5/eqP.
+apply/forallP=> i; apply/forallP=> j; apply/forallP=> b; apply/implyP=> /eqP.
+by move=> /(H3 i j b (ltn_ord i) (ltn_ord j))->.
 Qed.
 
 (*****************************************************************************)
@@ -842,37 +855,38 @@ rewrite eqxx IH => // i b Hi Hn.
 by apply: (Ha i.+1).
 Qed.
  
-Lemma entail_pcheck_col ps p (l : seq (seq bool)) i :
-  is_square ps -> is_square p -> size ps = size p ->
-  entail ps p -> i < size ps ->
-  get_col p i \in l ->
-  get_col p i \in [seq j <- l | pcheck (pget_col ps i) j].
+Lemma entail_pcheck_col n ps p (l : seq (seq bool)) j :
+  entail n ps p -> j < n -> get_col p j \in l ->
+  get_col p j \in [seq i <- l | pcheck (pget_col ps j) i].
 Proof.
-move=> Sps Sp Es He Hs Hg.
+move=> He Hs Hg.
+have /entailP[Sps Sp H1e] := He.
+have /andP[/eqP S1ps /forallP S2ps] := Sps.
+have /andP[/eqP S1p /forallP S2p] := Sp.
 rewrite mem_filter Hg andbT.
 apply: (pcheck_correct _ _ _ false) => [|i1 b Hi1 Li1].
-  by apply: etrans (_ : size ps = _); rewrite size_map.
+  by apply: etrans (_ : n = _); rewrite size_map.
 rewrite -get_row_col.
-have /entailP := He.
-apply => //.
-  by move: Hi1; rewrite size_map.
+apply: H1e => //.
+  by move: Hi1; rewrite size_map S1ps.
 by rewrite [LHS]pget_row_col.
 Qed.
 
-Lemma entail_pcheck_row ps p (l : seq (seq bool)) i :
-  is_square ps -> is_square p -> size ps = size p ->
-  entail ps p -> i < size ps ->
+Lemma entail_pcheck_row n ps p (l : seq (seq bool)) i :
+  entail n ps p -> i < n ->
   get_row p i \in l ->
   get_row p i \in [seq j <- l | pcheck (pget_row ps i) j].
 Proof.
-move=> Sps Sp Es He Hs Hg.
+move=> He Hs Hg.
+have /entailP[Sps Sp H1e] := He.
+have /andP[/eqP S1ps /forallP S2ps] := Sps.
+have /andP[/eqP S1p /forallP S2p] := Sp.
 rewrite mem_filter Hg andbT.
 apply: (pcheck_correct _ _ _ false) => [|i1 b Hi1 Li1].
-  apply: etrans (_ : size ps = _); first by rewrite pget_row_size.
-  by rewrite get_row_size // -Es.
-have /entailP := He.
-apply => //.
-by move: Hi1; rewrite pget_row_size. 
+  apply: etrans (_ : n = _); first by apply: pget_row_size.
+  by apply/esym/get_row_size.
+apply: H1e => //.
+by move: Hi1; rewrite (pget_row_size n). 
 Qed.
 
 (*****************************************************************************)
@@ -900,7 +914,6 @@ Definition to_ij d u :=
   let j := Z.to_nat (Int63Op.to_Z (Int63Native.modulo u d)) in (i, j).
   
 Lemma interp_gen_form_row (s : sol) x l :
-  s != [::] ->
   size (get_row s x) = size s ->
   (Z.of_nat (size s) * Z.of_nat (size s) < Int63Axioms.wB)%Z ->
   x < size s ->
@@ -910,7 +923,7 @@ Lemma interp_gen_form_row (s : sol) x l :
          (gen_form (fun i => varb (nat2int (x * (size s)) + i))
                l (size s)).
 Proof.
-move=> HnZ Hus Hm Hs H.
+move=> Hus Hm Hs H.
 have : get_row s x \in gen_constr l (size s).
   by apply: gen_constr_mem.
 rewrite /gen_form.
@@ -977,7 +990,7 @@ case: {Ha Hv Hl}a.
   rewrite !Int63Properties.of_Z_spec.
   rewrite !Zmod_small // {}/u1.
   rewrite !Nat2Z.inj_mul Z.div_add_l; last first.
-    by case: (s) HnZ.
+    by case: (s) Hs.
   rewrite Z.div_small; last first.
     split; first by apply: Zle_0_nat.
     by apply/inj_lt/ltP.
@@ -996,7 +1009,7 @@ rewrite Int63Axioms.add_spec.
 rewrite !Int63Properties.of_Z_spec.
 rewrite !Zmod_small // {}/u1.
 rewrite !Nat2Z.inj_mul Z.div_add_l; last first.
-  by case: (s) HnZ.
+  by case: (s) Hs.
 rewrite Z.div_small; last first.
   split; first by apply: Zle_0_nat.
   by apply/inj_lt/ltP.
@@ -1008,7 +1021,6 @@ by apply/inj_lt/ltP.
 Qed.
 
 Lemma interp_gen_form_col (s : sol) y l :
-  s != [::] ->
   (Z.of_nat (size s) * Z.of_nat (size s) < Int63Axioms.wB)%Z ->
   y < size s ->
   count (get_col s y) = l ->
@@ -1017,7 +1029,7 @@ Lemma interp_gen_form_col (s : sol) y l :
          (gen_form (fun i => varb (i * nat2int (size s) + nat2int y))
                l (size s)).
 Proof.
-move=> HnZ Hm Hs H.
+move=> Hm Hs H.
 have Hus : size (get_col s y) = size s.
   by rewrite size_map.
 have : get_col s y \in gen_constr l (size s).
@@ -1094,7 +1106,7 @@ case: {Ha Hv Hl}a.
   rewrite !Int63Properties.of_Z_spec.
   rewrite !Zmod_small // {}/u1.
   rewrite  Z.div_add_l; last first.
-    by case: (s) HnZ.
+    by case: (s) Hs.
   rewrite Z.div_small; last first.
     split; first by apply: Zle_0_nat.
     by apply/inj_lt/ltP.
@@ -1115,7 +1127,7 @@ rewrite Int63Axioms.mul_spec /=.
 rewrite !Int63Properties.of_Z_spec.
 rewrite !Zmod_small // {}/u1.
 rewrite Z.div_add_l; last first.
-  by case: (s) HnZ.
+  by case: (s) Hs.
 rewrite Z.div_small; last first.
   split; first by apply: Zle_0_nat.
   by apply/inj_lt/ltP.
@@ -1133,7 +1145,6 @@ Qed.
 (*                                                                           *)
 (*****************************************************************************)
 
-
 Definition pgen_form (pp : seq (option colour)) f l d :=
   let ll := [seq i <- gen_constr l d | pcheck pp i] in
   orb (map (fun l =>
@@ -1143,25 +1154,24 @@ Definition pgen_form (pp : seq (option colour)) f l d :=
                   (if b then (f i) else negb (f i)))
               (zip (int_iota 0 d) l)))  ll).
 
-Lemma interp_pgen_form_row (s : sol) pp x l :
-  s != [::] ->
-  (Z.of_nat (size s) * Z.of_nat (size s) < Int63Axioms.wB)%Z ->
-  x < size s ->
-  size pp = size s ->
-  is_square pp ->
-  is_square s ->
-  entail pp s ->
+Lemma interp_pgen_form_row n (s : sol) pp x l :
+  (Z.of_nat n * Z.of_nat n < Int63Axioms.wB)%Z ->
+  x < n ->
+  entail n pp s ->
   count (get_row s x) = l ->
-  interp (fun u => let: (i, j) := to_ij (nat2int (size s)) u in
+  interp (fun u => let: (i, j) := to_ij (nat2int n) u in
                    get_xy s i j)
          (pgen_form (pget_row pp x) 
-                (fun i => varb (nat2int (x * (size s)) + i))
-               l (size s)).
+                (fun i => varb (nat2int (x * n) + i))
+               l n).
 Proof.
-move=> HnZ Hm Hs Hss Spp Sp He H.
-have Hus : size (get_row s x) = size s.
-  by have /forallP/(_ (Ordinal Hs))/eqP := Sp.
-have : get_row s x \in gen_constr l (size s).
+move=> Hm Hs He H.
+have /entailP[Spp Sp H1e] := He.
+have /andP[/eqP S1pp /forallP S2pp] := Spp.
+have /andP[/eqP S1p /forallP S2p] := Sp.
+have Hus : size (get_row s x) = n.
+  by apply: get_row_size.
+have : get_row s x \in gen_constr l n.
   by apply: gen_constr_mem.
 rewrite /pgen_form.
 elim: gen_constr => [//|a l1 IH].
@@ -1174,17 +1184,16 @@ rewrite /=.
 have -> : pcheck (pget_row pp x) a.
   rewrite -Ha.
   apply: (pcheck_correct _ _ _ false).
-    by rewrite pget_row_size ?Hss.
+    by rewrite (pget_row_size n).
   move=> y b Hy Hn.
-  have /entailP := He.
-  apply; rewrite ?Hss //.
-   by move: Hy; rewrite pget_row_size ?Hss.
+  apply: H1e => //.
+  by move: Hy; rewrite (pget_row_size n).
 rewrite /= mk_orb_cons /=.
 rewrite mk_andb_map // => i.
-have {3}-> : size s = size a by rewrite -Ha.
+have {3}-> : n = size a by rewrite -Ha.
 have: (forall y, y < size a ->  nth false a y = get_xy s x y).
   by move=> y Hy; rewrite -Ha.
-have: size a <= size s by rewrite -Ha Hus.
+have: size a <= n by rewrite -Ha Hus.
 move: {Ha}a.
 apply: last_ind => //= u a IH1 Hl Ha.
 rewrite size_rcons.
@@ -1196,31 +1205,31 @@ case: (List_in_rcons _ _ _ _ Hv) => [->/=|/IH1 -> //]; last 2 first.
 have : get_xy s x (size u) = a.
   rewrite -Ha  ?size_rcons //.
   by rewrite nth_rcons ltnn eqxx.
-have Hl1 : size u < size s.
+have Hl1 : size u < n.
   by apply: leq_trans Hl; rewrite size_rcons.
-have F1 : (0 <= Z.of_nat (size s) < Int63Axioms.wB)%Z.
+have F1 : (0 <= Z.of_nat n < Int63Axioms.wB)%Z.
   split; first by apply: Zle_0_nat.
   apply: Z.le_lt_trans Hm.
   by apply: BigNumPrelude.Zsquare_le.
 have F2 : (0 <= Z.of_nat (size u) < Int63Axioms.wB)%Z.
   split; first by apply: Zle_0_nat.
   apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : Z.of_nat (size s) <= _)%Z.
+  apply: Z.le_trans (_ : Z.of_nat n <= _)%Z.
     by apply/inj_le/leP/ltnW.
   by apply: BigNumPrelude.Zsquare_le.
-have F3 : (0 <= Z.of_nat (x * size s) < Int63Axioms.wB)%Z.
+have F3 : (0 <= Z.of_nat (x * n) < Int63Axioms.wB)%Z.
   split; first by apply: Zle_0_nat.
   rewrite Nat2Z.inj_mul.
   apply: Z.le_lt_trans Hm.
   apply: Zmult_le_compat_r.
     by apply/inj_le/leP/ltnW.
   by apply: Zle_0_nat.
-have F4 : (0 <= Z.of_nat (x * size s) + Z.of_nat (size u) <
+have F4 : (0 <= Z.of_nat (x * n) + Z.of_nat (size u) <
  Int63Axioms.wB)%Z.
   split; first by apply: Z.add_nonneg_nonneg; apply: Zle_0_nat.
   rewrite Nat2Z.inj_mul.
   apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : ((Z.of_nat x + 1) * Z.of_nat (size s)  <= _)%Z).
+  apply: Z.le_trans (_ : ((Z.of_nat x + 1) * Z.of_nat n  <= _)%Z).
     rewrite Z.mul_add_distr_r Z.mul_1_l.
     apply: Zplus_le_compat_l.
     by apply/inj_le/leP/ltnW.
@@ -1239,7 +1248,7 @@ case: {Ha Hv Hl}a.
   rewrite !Int63Properties.of_Z_spec.
   rewrite !Zmod_small // {}/u1.
   rewrite !Nat2Z.inj_mul Z.div_add_l; last first.
-    by case: (s) HnZ.
+    by case: (n) Hl1.
   rewrite Z.div_small; last first.
     split; first by apply: Zle_0_nat.
     by apply/inj_lt/ltP.
@@ -1258,7 +1267,7 @@ rewrite Int63Axioms.add_spec.
 rewrite !Int63Properties.of_Z_spec.
 rewrite !Zmod_small // {}/u1.
 rewrite !Nat2Z.inj_mul Z.div_add_l; last first.
-  by case: (s) HnZ.
+  by case: (n) Hl1.
 rewrite Z.div_small; last first.
   split; first by apply: Zle_0_nat.
   by apply/inj_lt/ltP.
@@ -1269,25 +1278,24 @@ split; first by apply: Zle_0_nat.
 by apply/inj_lt/ltP.
 Qed.
 
-Lemma interp_pgen_form_col (s : sol) pp y l :
-  s != [::] ->
-  (Z.of_nat (size s) * Z.of_nat (size s) < Int63Axioms.wB)%Z ->
-  y < size s ->
-  size pp = size s ->
-  is_square pp ->
-  is_square s ->
-  entail pp s ->
+Lemma interp_pgen_form_col n (s : sol) pp y l :
+  (Z.of_nat n * Z.of_nat n < Int63Axioms.wB)%Z ->
+  y < n ->
+  entail n pp s ->
   count (get_col s y) = l ->
-  interp (fun u => let: (i, j) := to_ij (nat2int (size s)) u in
+  interp (fun u => let: (i, j) := to_ij (nat2int n) u in
                    get_xy s i j)
          (pgen_form (pget_col pp y) 
-                (fun i => varb (i * nat2int (size s) + nat2int y))
-               l (size s)).
+                (fun i => varb (i * nat2int n + nat2int y))
+               l n).
 Proof.
-move=> HnZ Hm Hs Hss Spp Sp He H.
-have Hus : size (get_col s y) = size s.
+move=> Hm Hs He H.
+have /entailP[Spp Sp H1e] := He.
+have /andP[/eqP S1pp /forallP S2pp] := Spp.
+have /andP[/eqP S1p /forallP S2p] := Sp.
+have Hus : size (get_col s y) = n.
   by rewrite size_map.
-have : get_col s y \in gen_constr l (size s).
+have : get_col s y \in gen_constr l n.
   by apply: gen_constr_mem.
 rewrite /pgen_form.
 elim: gen_constr => [//|a l1 IH].
@@ -1300,19 +1308,18 @@ rewrite /=.
 have -> : pcheck (pget_col pp y) a.
   rewrite -Ha.
   apply: (pcheck_correct _ _ _ false).
-    by rewrite size_map ?Hss.
+    by rewrite size_map S1pp (get_col_size n).
   move=> x b Hx Hn.
   rewrite -get_row_col.
-  have /entailP := He.
-  apply; rewrite ?Hss //.
-    by move: Hx; rewrite size_map ?Hss.
+  apply: H1e => //.
+    by move: Hx; rewrite size_map S1pp.
   by move: Hn; rewrite -pget_row_col.
 rewrite /= mk_orb_cons /=.
 rewrite mk_andb_map // => i.
-have {3}-> : size s = size a by rewrite -Ha.
+have {3}-> : n = size a by rewrite -Ha.
 have: (forall x, x < size a ->  nth false a x = get_xy s x y).
   by move=> x Hx; rewrite -Ha -get_row_col.
-have: size a <= size s by rewrite -Ha Hus.
+have: size a <= n by rewrite -Ha Hus.
 move: {Ha}a.
 apply: last_ind => //= u a IH1 Hl Ha.
 rewrite size_rcons.
@@ -1324,9 +1331,9 @@ case: (List_in_rcons _ _ _ _ Hv) => [->/=|/IH1 -> //]; last 2 first.
 have : get_xy s (size u) y = a.
   rewrite -Ha  ?size_rcons //.
   by rewrite nth_rcons ltnn eqxx.
-have Hl1 : size u < size s.
+have Hl1 : size u < n.
   by apply: leq_trans Hl; rewrite size_rcons.
-have F1 : (0 <= Z.of_nat (size s) < Int63Axioms.wB)%Z.
+have F1 : (0 <= Z.of_nat n < Int63Axioms.wB)%Z.
   split; first by apply: Zle_0_nat.
   apply: Z.le_lt_trans Hm.
   by apply: BigNumPrelude.Zsquare_le.
@@ -1338,23 +1345,23 @@ have F2 : (0 <= Z.of_nat y < Int63Axioms.wB)%Z.
 have F3 : (0 <= Z.of_nat (size u) < Int63Axioms.wB)%Z.
   split; first by apply: Zle_0_nat.
   apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : Z.of_nat (size s) <= _)%Z.
+  apply: Z.le_trans (_ : Z.of_nat n <= _)%Z.
     by apply/inj_le/leP/ltnW.
   by apply: BigNumPrelude.Zsquare_le.
-have F4 : (0 <= Z.of_nat (size u) * Z.of_nat (size s) < Int63Axioms.wB)%Z.
+have F4 : (0 <= Z.of_nat (size u) * Z.of_nat n < Int63Axioms.wB)%Z.
   split.
     by apply: Z.mul_nonneg_nonneg; apply: Zle_0_nat.
   apply: Z.le_lt_trans Hm.
   apply: Zmult_le_compat_r.
     by apply/inj_le/leP/ltnW.
   by apply: Zle_0_nat.
-have F6 : (0 <= Z.of_nat (size u) * Z.of_nat (size s) +
+have F6 : (0 <= Z.of_nat (size u) * Z.of_nat n +
  Z.of_nat y < Int63Axioms.wB)%Z.
   split.
     apply: Z.add_nonneg_nonneg; try apply: Zle_0_nat.
     by apply: Z.mul_nonneg_nonneg; apply: Zle_0_nat.
   apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : ((Z.of_nat (size u) + 1) * Z.of_nat (size s)  <= _)%Z).
+  apply: Z.le_trans (_ : ((Z.of_nat (size u) + 1) * Z.of_nat n  <= _)%Z).
     rewrite Z.mul_add_distr_r Z.mul_1_l.
     apply: Zplus_le_compat_l.
     by apply/inj_le/leP/ltnW.
@@ -1375,7 +1382,7 @@ case: {Ha Hv Hl}a.
   rewrite !Int63Properties.of_Z_spec.
   rewrite !Zmod_small // {}/u1.
   rewrite  Z.div_add_l; last first.
-    by case: (s) HnZ.
+    by case: (n) Hl1.
   rewrite Z.div_small; last first.
     split; first by apply: Zle_0_nat.
     by apply/inj_lt/ltP.
@@ -1396,7 +1403,7 @@ rewrite Int63Axioms.mul_spec /=.
 rewrite !Int63Properties.of_Z_spec.
 rewrite !Zmod_small // {}/u1.
 rewrite Z.div_add_l; last first.
-  by case: (s) HnZ.
+  by case: (n) Hl1.
 rewrite Z.div_small; last first.
   split; first by apply: Zle_0_nat.
   by apply/inj_lt/ltP.
@@ -1406,7 +1413,6 @@ rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
 split; first by apply: Zle_0_nat.
 by apply/inj_lt/ltP.
 Qed.
-
 
 (*****************************************************************************)
 (*                                                                           *)
@@ -1418,10 +1424,10 @@ Qed.
 (*
 Definition psize := 2. 
 
-Definition columns := [::[::1]; [::1]]. 
-Definition lines := [::[::1]; [::1]].
+Definition cols := [::[::1]; [::1]]. 
+Definition rows := [::[::1]; [::1]].
 
-Compute [seq (length (gen_constr i psize)) | i <- lines].
+Compute [seq (length (gen_constr i psize)) | i <- rows].
 
 Definition known_black :=  [::([::0], 0)].
 *)
@@ -1429,7 +1435,7 @@ Definition known_black :=  [::([::0], 0)].
 
 Definition psize := 25. 
 
-Definition columns := 
+Definition cols := 
   [::[::7;2;1;1;7];
      [::1;1;2;2;1;1];
      [::1;3;1;3;1;3;1;3;1];
@@ -1456,23 +1462,7 @@ Definition columns :=
      [::1;1;2;2;2;6;1];
      [::7;1;3;2;1;1]].
 
-Compute [seq (length (gen_constr i 25)) | i <- columns].
-
-Definition verify_col s :=
-  all (fun i => count (get_col s i) == nth [::] columns i) (iota 0 psize).
-
-Lemma verify_colP s : 
-  reflect (forall i : 'I_psize, count (get_col s i) = nth [::] columns i)
-          (verify_col s).
-Proof.
-apply: (iffP allP) => [H i| H x].
-  suff /(H _)/eqP : (i : nat) \in iota 0 psize by [].
-  by rewrite -val_enum_ord map_f // mem_enum.
-rewrite -val_enum_ord => /mapP /= [y Hy ->].
-by rewrite H.
-Qed.
-
-Definition lines :=
+Definition rows :=
   [:: [::7;3;1;1;7];
      [::1;1;2;2;1;1];
      [::1;3;1;3;1;1;3;1];
@@ -1499,13 +1489,62 @@ Definition lines :=
      [::1;1;2;1;1;2];
      [::7;2;1;2;5]].
 
-Compute [seq (length (gen_constr i 25)) | i <- lines].
+Definition known_black := 
+  [::([::3;4;12;13;21], 3);
+   ([::6;7;10;14;15;18], 8);
+   ([::6;11;16;20], 16);
+   ([::3;4;9;10;15;20;21],21)].
+
+(*
+Definition psize := 4.
+Definition isize := nat2int psize. 
+
+Definition cols := 
+  [::[::];
+     [::2];
+     [::2];
+     [::]
+  ]. 
+
+Definition rows := 
+  [::[::];
+     [::2];
+     [::2];
+     [::]
+  ]. 
+
+Definition known_black : seq (seq nat * nat) := 
+  [::].
+*)
+Compute [seq (length (gen_constr i 25)) | i <- cols].
+
+Definition verify_col s :=
+  all (fun i => count (get_col s i) == nth [::] cols i) (iota 0 psize).
+
+Lemma verify_colP s : 
+  reflect (forall i : 'I_psize, count (get_col s i) = nth [::] cols i)
+          (verify_col s).
+Proof.
+apply: (iffP allP) => [H i| H x].
+  suff /(H _)/eqP : (i : nat) \in iota 0 psize by [].
+  by rewrite -val_enum_ord map_f // mem_enum.
+rewrite -val_enum_ord => /mapP /= [y Hy ->].
+by rewrite H.
+Qed.
+
+Lemma valid_rows_size : size rows = psize.
+Proof. by []. Qed.
+
+Lemma valid_cols_size : size cols = psize.
+Proof. by []. Qed.
+
+Compute [seq (length (gen_constr i 25)) | i <- rows].
 
 Definition verify_row s :=
-  all (fun i => count (get_row s i) == nth [::] lines i) (iota 0 psize).
+  all (fun i => count (get_row s i) == nth [::] rows i) (iota 0 psize).
 
 Lemma verify_rowP s : 
-  reflect (forall i : 'I_psize, count (get_row s i) = nth [::] lines i)
+  reflect (forall i : 'I_psize, count (get_row s i) = nth [::] rows i)
           (verify_row s).
 Proof.
 apply: (iffP allP) => [H i| H x].
@@ -1527,17 +1566,15 @@ Lemma valid_count_suml d l :
   valid_count d l -> (size l).-1 + \sum_(i <- l) i  <= d.
 Proof. by move=> /andP[_]; rewrite foldl_addn. Qed.
 
-Lemma valid_count_lines : all (valid_count psize) lines.
+Lemma valid_count_rows : all (valid_count psize) rows.
 Proof. by compute. Qed.
 
-Lemma valid_count_columns : all (valid_count psize) columns.
+Lemma valid_count_cols : all (valid_count psize) cols.
 Proof. by compute. Qed.
 
-Definition known_black := 
-  [::([::3;4;12;13;21], 3);
-   ([::6;7;10;14;15;18], 8);
-   ([::6;11;16;20], 16);
-   ([::3;4;9;10;15;20;21],21)].
+Lemma psize_fits_int : 
+  (Z.of_nat psize * Z.of_nat psize < Int63Axioms.wB)%Z.
+Proof. by []. Qed.
 
 Definition verify_known_black s :=
   all (fun y => 
@@ -1556,31 +1593,48 @@ apply/allP=> x /= xIl.
 by rewrite (H _ _ _ xIl lyIb).
 Qed.
 
-Definition verify_sol s :=
- [&& verify_col s,  verify_row s & verify_known_black s]. 
+Definition valid_known_black :=
+  all (fun y => 
+          (y.2 < psize) && all (fun x => x < psize) y.1) known_black.
 
-Lemma verify_correctP s : 
+Lemma valid_known_blackP : 
+  forall x y l, x \in l -> (l, y) \in known_black -> x < psize /\ y < psize.
+Proof.
+move=> x y l xIl lyIk.
+have /allP/(_ _ lyIk)/andP[H1] : valid_known_black by [].
+by move=> /allP/(_ x xIl).
+Qed.
+
+Definition verify_sol s :=
+ [&& is_square psize s, verify_col s,  verify_row s & verify_known_black s]. 
+
+Lemma verify_solP s : 
   reflect
-    [/\   
-        forall i : 'I_psize, count (get_row s i) = nth [::] lines i,
-        forall j : 'I_psize, count (get_col s j) = nth [::] columns j &
+    [/\  
+        is_square psize s, 
+        forall i : 'I_psize, count (get_row s i) = nth [::] rows i,
+        forall j : 'I_psize, count (get_col s j) = nth [::] cols j &
         forall (x y : nat) (l : seq nat), 
             x \in l -> (l, y) \in known_black -> get_xy s x y = black]
     (verify_sol s).
 Proof.
-apply: (iffP and3P)=> [[H1 H2 H3]|[H1 H2 H3]]; split.
+apply: (iffP and4P)=> [[H1 H2 H3 H4]|[H1 H2 H3 H4]]; split => //.
 - by apply: verify_rowP.
 - by apply: verify_colP.
 - by apply: verify_known_blackP.
-- by have /verify_colP := H2.
-- by have /verify_rowP := H1.
-by have /verify_known_blackP := H3.
+- by have /verify_colP := H3.
+- by have /verify_rowP := H2.
+by have /verify_known_blackP := H4.
 Qed.
 
 Definition init_pp : psol := nseq psize (nseq psize None).
 
-Lemma init_pp_square : is_square init_pp.
+Lemma init_pp_size : size init_pp = psize.
+Proof. by []. Qed.
+
+Lemma init_pp_square : is_square psize init_pp.
 Proof.
+rewrite /is_square eqxx /=.
 apply/forallP=> [[x]] /=.
 rewrite !nth_nseq => ->.
 by rewrite size_nseq.
@@ -1594,27 +1648,33 @@ rewrite nth_nseq; case: leqP; rewrite ?nth_nil //.
 by rewrite nth_nseq if_same.
 Qed.
 
+Lemma init_pp_entail s : is_square psize s -> entail psize init_pp s.
+Proof.
+rewrite /entail init_pp_square => -> /=.
+apply/forallP=> i; apply/forallP=> j; apply/forallP=> c.
+by rewrite init_pp_correct.
+Qed.
+
 Fixpoint vupdate s (l : seq nat) j  :=
   if l is i :: l then
   vupdate (pset_xy s i j (Some black)) l j else
   s.
 
-Lemma vupdate_square s l j : 
-  is_square s -> is_square (vupdate s l j).
+Lemma vupdate_square n s l j : 
+  is_square n s -> is_square n (vupdate s l j).
 Proof.
 elim: l s => //= a l IH s Hs.
 apply: IH.
 by apply: pset_xy_square.
 Qed.
 
-
 Fixpoint hupdate s (l : seq (seq nat * nat)) :=
   if l is (vl,j) :: l then
     hupdate (vupdate s vl j) l
   else s.
 
-Lemma hupdate_square s l : 
-  is_square s -> is_square (hupdate s l).
+Lemma hupdate_square n s l : 
+  is_square n s -> is_square n (hupdate s l).
 Proof.
 elim: l s => //= [] [vl a] l IH s Hs.
 by apply/IH/vupdate_square.
@@ -1622,41 +1682,80 @@ Qed.
 
 Definition pp := hupdate init_pp known_black.
 
-Lemma pp_square : is_square pp.
+Lemma pp_square : is_square psize pp.
 Proof. by apply/hupdate_square/init_pp_square. Qed.
 
+Lemma pp_correct s : verify_sol s -> entail psize pp s.
+Proof.
+move=> /and4P[Hs _ _ /verify_known_blackP].
+rewrite /pp.
+have := init_pp_entail s Hs.
+have := init_pp_square.
+move: valid_known_blackP.
+elim: known_black init_pp => //= [] [vl y] l IH s1 H1s1 H2s1 H3s1 H.
+apply: IH => 
+    [x1 y1 l1 xIl1 l1y1Il|||x1 y1 l1 x1Il1 V1].
+- by apply: H1s1 xIl1 _; rewrite inE l1y1Il orbC.
+- by apply: vupdate_square.
+- have: forall x, x \in vl -> get_xy s x y = black.
+    by move=> x Hx; apply: H Hx _; rewrite inE eqxx.
+  have: forall y1, y1 \in vl -> y1 < psize.
+    move=> u1 u1Ivl.
+    have [] // := H1s1 u1 y _ u1Ivl.
+    by rewrite inE eqxx.
+  elim: (vl) s1 H1s1 H2s1 H3s1 => //= a l1 IH1 s1 H1s1 H2s1 H3s1 H1 H2.
+  have [F1 F2] : a < psize /\ y < psize.
+    have F1 : a \in a :: l1 by rewrite inE eqxx.
+    by apply: H1s1 F1 _; rewrite inE eqxx.
+  apply: IH1 => // [x1 u1 l2 x1Il2|||y1 h1Il1|x xIl1].
+  - rewrite !inE=> /orP[/andP[/= /eqP V1 /eqP ->]|V1].
+      split=> //.
+      by apply: H1; rewrite -V1 inE orbC x1Il2.
+    by apply: H1s1 x1Il2 _; rewrite inE orbC V1.
+  - by apply: pset_xy_square.
+  - apply/entailP; split => // [|i j b Li Lj].
+      by apply: pset_xy_square.
+    rewrite (pset_xy_correct psize) //.
+    case: eqP=> [<-|/= _]; last first.
+      by have /entailP[_ _] := H3s1; apply.
+    case: eqP=> [<-/= [<-]|/= _]; last first.
+      by have /entailP[_ _] := H3s1; apply.
+    by apply: H2; rewrite inE eqxx.
+  - by apply: H1; rewrite inE orbC h1Il1.
+  by apply: H2; rewrite inE orbC xIl1.
+by apply: H x1Il1 _; rewrite inE orbC V1.
+Qed.
+
 Definition cl i pp :=
-let l := nth [::] lines i in
+let l := nth [::] rows i in
 let pl := pget_row pp i in
 let v := gen_constr l psize in
 [seq i <- v | pcheck pl i].
 
 Lemma cl_correct pp p i :  
-  is_square pp -> is_square p -> 
-  size pp = psize -> size p = psize ->
-  entail pp p -> 
-  count (get_row p i) = nth [::] lines i->
-  i < size pp ->
+  entail psize pp p -> 
+  count (get_row p i) = nth [::] rows i->
+  i < psize ->
   get_row p i \in cl i pp.
 Proof.
-move=> Spp Sp Hspp Hsp Epp Hc Li.
-apply: entail_pcheck_row => //.
-  by rewrite Hspp Hsp.
+move=> Epp Hc Li.
+have /entailP[Spp Sp E1pp] := Epp.
+apply: entail_pcheck_row Epp _ _ => //.
 apply: gen_constr_mem => //.
-have Li1 : i < size p by rewrite Hsp -Hspp.
-by have /forallP/(_ (Ordinal Li1))/eqP-> := Sp.
+by apply: get_row_size.
 Qed.
 
 Lemma cl_size pp i l :  
-  i < size lines -> l \in cl i pp -> size l = psize.
+  i < psize -> l \in cl i pp -> size l = psize.
 Proof.
 move=> Li; rewrite /cl mem_filter => /andP[_ H].
-have Vp : valid_count psize (nth [::] lines i).
-  by have /allP/(_  _ (mem_nth [::] Li)) := 
-            valid_count_lines.
+have Vp : valid_count psize (nth [::] rows i).
+  have F1 : i < size rows by rewrite valid_rows_size.
+  by have /allP/(_  _ (mem_nth [::] F1)) := 
+            valid_count_rows.
 apply: gen_constr_size H _ => [i1|].
   by apply: valid_count_gt_0 Vp.
-apply: valid_count_suml Vp.
+by apply: valid_count_suml Vp.
 Qed.
  
 Definition lpp pp := foldi (fun n psol => 
@@ -1665,104 +1764,79 @@ Definition lpp pp := foldi (fun n psol =>
     (pset_row psol n [seq Some i | i <- l]) else psol) psize.-1 pp.
 
 Lemma lpp_correct p pp : 
-  is_square pp -> is_square p -> size pp = psize -> size p = psize ->
-  entail pp p -> 
-  (forall i, i < size pp -> count (get_row p i) = nth [::] lines i)->
-  entail (lpp pp) p.
+  entail psize pp p -> 
+  (forall i, i < psize -> count (get_row p i) = nth [::] rows i)->
+  entail psize (lpp pp) p.
 Proof.
-move=> Spp Sp Hspp Hsp Ep Cp.
+move=> Ep Cp.
 rewrite /lpp.
-elim: {-2}(_.-1) (leqnn (psize.-1)) pp Hspp Spp Ep Cp => /=;
+elim: {-2}(_.-1) (leqnn (psize.-1)) pp Ep Cp => /=;
   last first.
-set f := fun _ _ => _.
-move=> n IH Ln pp Hspp Spp Ep Cp.
-apply: IH => //.
-- by apply: ltnW.
-- case: cl => // a [|l] //.
-  by rewrite size_map size_iota.
-- have := cl_size pp n.+1.
-   case: cl => // a [|l] //.
-   have aI : a \in [::a] by rewrite inE.
-   move=> /(_ _ Ln aI) Ha.
-  apply: pset_row_square => // _.
-  by rewrite size_map Ha Hspp.
-- have F1 : n.+1 < size pp by rewrite Hspp.
-  have := cl_correct pp p n.+1 Spp Sp Hspp Hsp Ep (Cp _ F1) F1.
+  set f := fun _ _ => _.
+  move=> n IH Ln pp Ep Cp.
+  apply: IH => //.
+  - by apply: ltnW.
+  have := cl_correct pp p n.+1 Ep (Cp n.+1 Ln) Ln.
   case: cl => // a [|l] //.
   rewrite inE => /eqP<-.
-  apply/entailP=> i j b Hi Hj.
+  have /entailP[H1 H2 H3] := Ep.
+  have Hpp : size pp = psize by case/andP: H1 => /eqP.
+  (apply/entailP; split) => // [|i j b Hi Hj].
+    apply: pset_row_square => // Hn.
+    by rewrite size_map (get_row_size psize).
   rewrite /pget_xy.
-  rewrite pset_row_correct; last by rewrite Hspp.
-  case: eqP => [<-|_ U]; last first.
-    have/entailP := Ep.
-    apply => //.
-      by move: Hi; rewrite size_map size_iota.
-    by move: Hj; rewrite size_map size_iota.
+  rewrite pset_row_correct //; last by rewrite Hpp.
+  case: eqP => [<-|_ U]; last by apply: H3.
   rewrite (nth_map false) // => [[<-//]|].
-  rewrite get_row_size //.
-    by move: Hj; rewrite size_map size_iota Hspp Hsp.
-  by rewrite Hsp.
-- move=> i Hi.
-  apply: Cp => //.
-  move: Hi; case: cl => // a [|] //.
-  by rewrite size_map size_iota.
-move=> L pp Hspp Spp Ep Cp.
-have F1 : 0 < size pp by rewrite Hspp.
-have := cl_correct pp p 0 Spp Sp Hspp Hsp Ep (Cp _ F1) F1.
+  by rewrite (get_row_size psize).
+move=> L pp Ep Cp.
+have /entailP[H1 H2 H3] := Ep.
+have Hpp : size pp = psize by case/andP: H1 => /eqP.
+have F1 : 0 < psize by [].
+have := cl_correct pp p 0 Ep (Cp _ F1) F1.
 case: cl => // a [|l] //.
 rewrite inE => /eqP<-.
-apply/entailP=> i j b Hi Hj.
+(apply/entailP; split) => // [|i j b Hi Hj].
+  apply: pset_row_square => // Hn.
+  by rewrite size_map (get_row_size psize).
 rewrite /pget_xy.
-rewrite pset_row_correct; last by rewrite Hspp.
-case: eqP => [<-|_ U]; last first.
-  have/entailP := Ep.
-  apply => //.
-    by move: Hi; rewrite size_map size_iota.
-  by move: Hj; rewrite size_map size_iota.
+rewrite pset_row_correct //; last by rewrite Hpp.
+case: eqP => [<-|_ U]; last by apply: H3.
 rewrite (nth_map false) // => [[<-//]|].
-rewrite get_row_size //.
-  by move: Hj; rewrite size_map size_iota Hspp Hsp.
-by rewrite Hsp.
+by rewrite (get_row_size psize).
 Qed.
-
   
-Definition pp1 := lpp pp.
-
-Compute pp1 == pp.
-
 Definition cp i pp :=
-let l := nth [::] columns i in
+let l := nth [::] cols i in
 let pl := pget_col pp i in
 let v := gen_constr l psize in
 [seq i <- v | pcheck pl i].
 
 Lemma cp_correct pp p j :  
-  is_square pp -> is_square p -> 
-  size pp = psize -> size p = psize ->
-  entail pp p -> 
-  count (get_col p j) = nth [::] columns j ->
-  j < size pp ->
+  entail psize pp p -> 
+  count (get_col p j) = nth [::] cols j ->
+  j < psize ->
   get_col p j \in cp j pp.
 Proof.
-move=> Spp Sp Hspp Hsp Epp Hc Lj.
-apply: entail_pcheck_col => //.
-  by rewrite Hspp Hsp.
+move=> Epp Hc Lj.
+apply: entail_pcheck_col (Epp) _ _ => //.
 apply: gen_constr_mem => //.
-by rewrite size_map.
+apply: get_col_size => //.
+by case/entailP : Epp.
 Qed.
 
 Lemma cp_size pp j l :  
-  j < size columns -> l \in cp j pp -> size l = psize.
+  j < psize -> l \in cp j pp -> size l = psize.
 Proof.
 move=> Lj; rewrite /cp mem_filter => /andP[_ H].
-have Vp : valid_count psize (nth [::] columns j).
-  by have /allP/(_  _ (mem_nth [::] Lj)) := 
-            valid_count_columns.
+have Vp : valid_count psize (nth [::] cols j).
+  have F1 : j < size cols by rewrite valid_cols_size.
+  by have /allP/(_  _ (mem_nth [::] F1)) := 
+            valid_count_cols.
 apply: gen_constr_size H _ => [i1|].
   by apply: valid_count_gt_0 Vp.
 apply: valid_count_suml Vp.
 Qed.
-
 
 Definition cpp pp := foldi (fun n psol => 
    let v := cp n psol in
@@ -1770,133 +1844,159 @@ Definition cpp pp := foldi (fun n psol =>
     (pset_col psol n [seq Some i | i <- l]) else psol) psize.-1 pp.
 
 Lemma cpp_correct p pp : 
-  is_square pp -> is_square p -> size pp = psize -> size p = psize ->
-  entail pp p -> 
-  (forall j, j < size pp -> count (get_col p j) = nth [::] columns j)->
-  entail (cpp pp) p.
+  entail psize pp p -> 
+  (forall j, j < psize -> count (get_col p j) = nth [::] cols j)->
+  entail psize (cpp pp) p.
 Proof.
-move=> Spp Sp Hspp Hsp Ep Cp.
+move=> Ep Cp.
 rewrite /cpp.
-elim: {-2}(_.-1) (leqnn (psize.-1)) pp Hspp Spp Ep Cp => /=;
+elim: {-2}(_.-1) (leqnn (psize.-1)) pp Ep Cp => /=;
   last first.
-set f := fun _ _ => _.
-move=> n IH Ln pp Hspp Spp Ep Cp.
-apply: IH => //.
-- by apply: ltnW.
-- case: cp => // a [|l] //.
-  by rewrite size_map size_iota.
-- have := cp_size pp n.+1.
+  set f := fun _ _ => _.
+  move=> n IH Ln pp Ep Cp.
+  apply: IH => //.
+    by apply: ltnW.
+  have := cp_correct pp p n.+1 Ep (Cp n.+1 Ln) Ln.
   case: cp => // a [|l] //.
-  have aI : a \in [::a] by rewrite inE.
-  move=> /(_ _ Ln aI) Ha.
-  apply: pset_col_square => //.
-  by rewrite size_map Ha Hspp.
-- have F1 : n.+1 < size pp by rewrite Hspp.
-  have := cp_correct pp p n.+1 Spp Sp Hspp Hsp Ep (Cp _ F1) F1.
-  case: cp => // a [|l] //.
-  rewrite inE => /eqP<-.
-  apply/entailP=> i j b Hi Hj.
+    rewrite inE => /eqP<-.
+  have /entailP[H1 H2 H3] := Ep.
+  have Hpp : size pp = psize by case/andP: H1 => /eqP.
+  have Hp : size p = psize by case/andP: H2 => /eqP.
+  (apply/entailP; split) => // [|i j b Hi Hj].
+    apply: pset_col_square => //.
+    by rewrite size_map (get_col_size psize).
   rewrite /pget_xy pget_row_col.
-  rewrite pset_col_correct //; last first.
-    by rewrite !size_map Hspp.
+  rewrite (pset_col_correct psize) //; last first.
+    by rewrite !size_map.
   case: eqP => [<-|_ U]; last first.
-    have/entailP := Ep.
-    apply => //.
-    - by move: Hi; rewrite size_map size_iota.
-    - by move: Hj; rewrite size_map size_iota.
+    apply: H3 => //.
     by rewrite [LHS]pget_row_col.
   rewrite (nth_map false) // => [[<-//]|].
     by rewrite [LHS]get_row_col.
   rewrite size_map.
-  by move: Hi; rewrite size_map size_iota Hspp Hsp.
-- move=> j Hj.
-  apply: Cp => //.
-  move: Hj; case: cp => // a [|] //.
-  by rewrite size_map size_iota.
-move=> L pp Hspp Spp Ep Cp.
-have F1 : 0 < size pp by rewrite Hspp.
-have := cp_correct pp p 0 Spp Sp Hspp Hsp Ep (Cp _ F1) F1.
+  by move: Hi; rewrite Hp.
+move=> L pp Ep Cp.
+have /entailP[H1 H2 H3] := Ep.
+have Hpp : size pp = psize by case/andP: H1 => /eqP.
+have Hp : size p = psize by case/andP: H2 => /eqP.
+have F1 : 0 < psize by [].
+have := cp_correct pp p 0 Ep (Cp _ F1) F1.
 case: cp => // a [|l] //.
 rewrite inE => /eqP<-.
-apply/entailP=> i j b Hi Hj.
+(apply/entailP; split) => // [|i j b Hi Hj].
+  apply: pset_col_square => //.
+  by rewrite size_map (get_col_size psize).
 rewrite /pget_xy pget_row_col.
-rewrite pset_col_correct //; last first.
-  by rewrite !size_map Hspp.
+rewrite (pset_col_correct psize) //; last first.
+  by rewrite !size_map.
 case: eqP => [<-|_ U]; last first.
-  have/entailP := Ep.
-  apply => //.
-  - by move: Hi; rewrite size_map size_iota.
-  - by move: Hj; rewrite size_map size_iota.
+  apply: H3 => //.
   by rewrite [LHS]pget_row_col.
 rewrite (nth_map false) // => [[<-//]|].
   by rewrite [LHS]get_row_col.
 rewrite size_map.
-by move: Hi; rewrite size_map size_iota Hspp Hsp.
+by move: Hi; rewrite Hp.
 Qed.
 
+Fixpoint iter_pp n pp := 
+  let pp1 := cpp (lpp pp) in
+  if pp1 == pp then pp else
+  if n is n1.+1 then iter_pp n1 pp1 else pp1.
 
-Definition pp2 := cpp pp1.
+Lemma iter_pp_correct n p pp : 
+  entail psize pp p -> 
+  verify_sol p ->
+  entail psize (iter_pp n pp) p.
+Proof.
+move=> He Hv.
+have /verify_solP[H1 H2 H3 H4] := Hv.
+elim: n pp He => /= [pp1 He|n IH pp1 He1].
+  case: eqP => // _.
+  apply: cpp_correct=> [|j Hj]; last first.
+    by apply: (H3 (Ordinal Hj)).
+  apply: lpp_correct => // i Hi.
+  by apply: (H2 (Ordinal Hi)).
+case: eqP => // _.
+apply: IH.
+apply: cpp_correct=> [|j Hj]; last first.
+  by apply: (H3 (Ordinal Hj)).
+apply: lpp_correct => // i Hi.
+by apply: (H2 (Ordinal Hi)).
+Qed.
 
-Compute pp2 == pp1.
+Definition final_pp := iter_pp psize pp.
 
-Definition pp3 := lpp pp2.
+Lemma final_pp_entail p : verify_sol p -> entail psize final_pp p.
+Proof.
+by move=> Hv; apply: iter_pp_correct => //; apply: pp_correct.
+Qed.
 
-Compute pp3 == pp2.
+Definition f_interp s x :=
+  let: (i, j) := to_ij (nat2int psize) x in
+                   get_xy s i j.
 
-Definition pp4 := cpp pp3.
+Definition gen_cols pp :=
+  andb 
+    [seq  (pgen_form
+             (pget_col pp j)
+             (fun i => varb (i * nat2int psize + nat2int j))
+             (nth [::] cols j)) psize | j <- iota 0 psize].
 
+Lemma gen_cols_correct s :
+  verify_sol s -> interp (f_interp s) (gen_cols final_pp).
+Proof.
+move=> Hv.
+rewrite /gen_cols.
+have : forall i, i \in iota 0 psize -> i < psize.
+  by move=> i; rewrite mem_iota.
+elim: iota => // b l IH Hu.
+rewrite map_cons [interp _ _]mk_andb_cons.
+apply/andP; split; last first.
+  by apply: IH => i Hi; apply: Hu; rewrite inE Hi orbC.
+have Lb : b < psize by apply: Hu; rewrite inE eqxx.
+apply: interp_pgen_form_col.
+- by exact: psize_fits_int.
+- by exact: Lb.
+- by apply: final_pp_entail.
+have /verify_solP[_ _ H _] := Hv.
+by apply: H (Ordinal Lb).
+Qed.
 
-(*
-Definition psize := 4.
-Definition isize := nat2int psize. 
+Definition gen_rows pp :=
+  andb 
+    [seq  (pgen_form
+             (pget_row pp i)
+             (fun j =>  varb (nat2int (i * psize) + j))
+             (nth [::] rows i)) psize | i <- iota 0 psize].
 
-Definition columns := 
-  [::[::];
-     [::2];
-     [::2];
-     [::]
-  ]. 
+Lemma gen_rows_correct s :
+  verify_sol s -> interp (f_interp s) (gen_rows final_pp).
+Proof.
+move=> Hv.
+rewrite /gen_rows.
+have : forall i, i \in iota 0 psize -> i < psize.
+  by move=> i; rewrite mem_iota.
+elim: iota => // b l IH Hu.
+rewrite map_cons [interp _ _]mk_andb_cons.
+apply/andP; split; last first.
+  by apply: IH => i Hi; apply: Hu; rewrite inE Hi orbC.
+have Lb : b < psize by apply: Hu; rewrite inE eqxx.
+apply: interp_pgen_form_row.
+- by exact: psize_fits_int.
+- by exact: Lb.
+- by apply: final_pp_entail.
+have /verify_solP[_ H _ _] := Hv.
+by apply: H (Ordinal Lb).
+Qed.
 
-Definition lines := 
-  [::[::];
-     [::2];
-     [::2];
-     [::]
-  ]. 
+Definition gen_all :=
+  andb [:: gen_rows final_pp; gen_cols final_pp].
 
-Definition known_black : seq (seq nat * nat) := 
-  [::].
-*)
-
-Definition gen_columns f :=
-  andb (map 
-    (fun p => let: (i, l) := p in  (gen_form (f i) l psize))
-   (zip (int_iota 0 psize) columns)).
-
-
-Definition gen_lines f :=
-  andb (map 
-    (fun p => let: (j, l) := p in (gen_form (fun i => f i j) l psize))
-   (zip (int_iota 0 psize) lines)).
-
-
-Definition gen_black f :=
-   andb (map
-    (fun p => let: (l, j) := p in 
-     (andb (map (fun i => (f (nat2int i) (nat2int j))) l)))
-    known_black).
-
-Definition gen_all f := andb [::gen_black f; gen_lines f; gen_columns f].
-
-
-Definition gen_sol f (sol : seq (seq bool)) :=
- andb (map
-  (fun p => 
-     let: (j, l) := p in
-      andb (map
-         (fun p1 => 
-               let: (i, b) := p1 in
-               (if b then (f i j) else negb (f i j)))
-       (zip (int_iota 0 psize) l)))
-   (zip (int_iota 0 psize) sol)).
+Lemma gen_all_correct s :
+  verify_sol s -> interp (f_interp s) gen_all.
+Proof.
+move=> Hv; rewrite [interp _ _]mk_andb_cons.
+rewrite gen_rows_correct; last by exact: Hv.
+by rewrite mk_andb_cons gen_cols_correct.
+Qed.
 
