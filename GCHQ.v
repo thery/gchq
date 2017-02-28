@@ -912,15 +912,82 @@ Compute gen_form (fun i => varb (0 + i)) [::2] 4.
 Definition to_ij d u := 
   let i := Z.to_nat (Int63Op.to_Z (Int63Native.div u d)) in
   let j := Z.to_nat (Int63Op.to_Z (Int63Native.modulo u d)) in (i, j).
+
+Definition f_interp n s x :=
+  let: (i, j) := to_ij (nat2int n) x in
+                   get_xy s i j.
+
+Lemma f_interpE n s i j :
+  (Z.of_nat n * Z.of_nat n < Int63Axioms.wB)%Z ->
+  i < n -> j < n ->
+  f_interp n s (nat2int i * nat2int n + nat2int j) =
+  get_xy s i j.
+Proof.
+move=> Hm Li Lj.
+have F1 : (0 <= Z.of_nat n < Int63Axioms.wB)%Z.
+  split; first by apply: Zle_0_nat.
+  apply: Z.le_lt_trans Hm.
+  by apply: BigNumPrelude.Zsquare_le.
+have F2 : (0 <= Z.of_nat j < Int63Axioms.wB)%Z.
+  split; first by apply: Zle_0_nat.
+  apply: Z.le_lt_trans Hm.
+  apply: Z.le_trans (_ : Z.of_nat n <= _)%Z.
+    by apply/inj_le/leP/ltnW.
+  by apply: BigNumPrelude.Zsquare_le.
+have F3 : (0 <= Z.of_nat i < Int63Axioms.wB)%Z.
+  split; first by apply: Zle_0_nat.
+  apply: Z.le_lt_trans Hm.
+  apply: Z.le_trans (_ : Z.of_nat n <= _)%Z.
+    by apply/inj_le/leP/ltnW.
+  by apply: BigNumPrelude.Zsquare_le.
+have F4 : (0 <= Z.of_nat i * Z.of_nat n < Int63Axioms.wB)%Z.
+  split; first by rewrite -Nat2Z.inj_mul; apply: Zle_0_nat.
+  apply: Z.le_lt_trans Hm.
+  apply: Zmult_le_compat_r.
+    by apply/inj_le/leP/ltnW.
+  by apply: Zle_0_nat.
+have F5 : (0 <= Z.of_nat i * Z.of_nat n + Z.of_nat j <
+ Int63Axioms.wB)%Z.
+  split.
+    rewrite -Nat2Z.inj_mul.
+    by apply: Z.add_nonneg_nonneg; apply: Zle_0_nat.
+  apply: Z.le_lt_trans Hm.
+  apply: Z.le_trans (_ : ((Z.of_nat i + 1) * Z.of_nat n  <= _)%Z).
+    rewrite Z.mul_add_distr_r Z.mul_1_l.
+    apply: Zplus_le_compat_l.
+    by apply/inj_le/leP/ltnW.
+  apply: Zmult_le_compat_r; last by apply: Zle_0_nat.
+  have-> : (Z.of_nat i + 1 = Z.of_nat i.+1)%Z.
+    by rewrite Nat2Z.inj_succ Z.add_1_r.
+  by apply/inj_le/leP.
+rewrite /f_interp /= Int63Axioms.div_spec /nat2int.
+rewrite !(Int63Axioms.add_spec, Int63Axioms.mul_spec).
+rewrite !Int63Properties.of_Z_spec.
+rewrite !Zmod_small //.
+rewrite Int63Axioms.mod_spec.
+set u1 := Z.modulo; rewrite -{1}/u1.
+rewrite !(Int63Axioms.add_spec, Int63Axioms.mul_spec).
+rewrite !Int63Properties.of_Z_spec.
+rewrite !Zmod_small // {}/u1.
+rewrite Z.div_add_l; last first.
+  by case: (n) Li.
+rewrite Z.div_small; last first.
+  split; first by apply: Zle_0_nat.
+  by apply/inj_lt/ltP.
+rewrite Z.add_0_r Nat2Z.id.
+rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
+  by rewrite Nat2Z.id.
+split; first by apply: Zle_0_nat.
+by apply/inj_lt/ltP.
+Qed.
   
 Lemma interp_gen_form_row (s : sol) x l :
   size (get_row s x) = size s ->
   (Z.of_nat (size s) * Z.of_nat (size s) < Int63Axioms.wB)%Z ->
   x < size s ->
   count (get_row s x) = l ->
-  interp (fun u => let: (i, j) := to_ij (nat2int (size s)) u in
-                   get_xy s i j)
-         (gen_form (fun i => varb (nat2int (x * (size s)) + i))
+  interp (f_interp (size s) s)
+         (gen_form (fun i => varb (nat2int x * nat2int (size s) + i))
                l (size s)).
 Proof.
 move=> Hus Hm Hs H.
@@ -949,83 +1016,16 @@ have : get_xy s x (size u) = a.
   by rewrite nth_rcons ltnn eqxx.
 have Hl1 : size u < size s.
   by apply: leq_trans Hl; rewrite size_rcons.
-have F1 : (0 <= Z.of_nat (size s) < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  by apply: BigNumPrelude.Zsquare_le.
-have F2 : (0 <= Z.of_nat (size u) < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : Z.of_nat (size s) <= _)%Z.
-    by apply/inj_le/leP/ltnW.
-  by apply: BigNumPrelude.Zsquare_le.
-have F3 : (0 <= Z.of_nat (x * size s) < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  rewrite Nat2Z.inj_mul.
-  apply: Z.le_lt_trans Hm.
-  apply: Zmult_le_compat_r.
-    by apply/inj_le/leP/ltnW.
-  by apply: Zle_0_nat.
-have F4 : (0 <= Z.of_nat (x * size s) + Z.of_nat (size u) <
- Int63Axioms.wB)%Z.
-  split; first by apply: Z.add_nonneg_nonneg; apply: Zle_0_nat.
-  rewrite Nat2Z.inj_mul.
-  apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : ((Z.of_nat x + 1) * Z.of_nat (size s)  <= _)%Z).
-    rewrite Z.mul_add_distr_r Z.mul_1_l.
-    apply: Zplus_le_compat_l.
-    by apply/inj_le/leP/ltnW.
-  apply: Zmult_le_compat_r; last by apply: Zle_0_nat.
-  have-> : (Z.of_nat x + 1 = Z.of_nat x.+1)%Z.
-    by rewrite Nat2Z.inj_succ Z.add_1_r.
-  by apply/inj_le/leP.
 case: {Ha Hv Hl}a.
-  rewrite Int63Axioms.div_spec /nat2int.
-  rewrite Int63Axioms.add_spec.
-  rewrite !Int63Properties.of_Z_spec !add0n.
-  rewrite !Zmod_small //.
-  rewrite Int63Axioms.mod_spec.
-  set u1 := Z.modulo; rewrite -{1}/u1.
-  rewrite Int63Axioms.add_spec.
-  rewrite !Int63Properties.of_Z_spec.
-  rewrite !Zmod_small // {}/u1.
-  rewrite !Nat2Z.inj_mul Z.div_add_l; last first.
-    by case: (s) Hs.
-  rewrite Z.div_small; last first.
-    split; first by apply: Zle_0_nat.
-    by apply/inj_lt/ltP.
-  rewrite Z.add_0_r Nat2Z.id.
-  rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
-    by rewrite Nat2Z.id => ->.
-  split; first by apply: Zle_0_nat.
-  by apply/inj_lt/ltP.
-rewrite Int63Axioms.div_spec /nat2int.
-rewrite Int63Axioms.add_spec.
-rewrite !Int63Properties.of_Z_spec !add0n.
-rewrite !Zmod_small //.
-rewrite Int63Axioms.mod_spec.
-set u1 := Z.modulo; rewrite -{1}/u1.
-rewrite Int63Axioms.add_spec.
-rewrite !Int63Properties.of_Z_spec.
-rewrite !Zmod_small // {}/u1.
-rewrite !Nat2Z.inj_mul Z.div_add_l; last first.
-  by case: (s) Hs.
-rewrite Z.div_small; last first.
-  split; first by apply: Zle_0_nat.
-  by apply/inj_lt/ltP.
-rewrite Z.add_0_r Nat2Z.id.
-rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
-  by rewrite Nat2Z.id => ->.
-split; first by apply: Zle_0_nat.
-by apply/inj_lt/ltP.
+  by rewrite add0n f_interpE.
+by rewrite add0n f_interpE // => ->.
 Qed.
 
 Lemma interp_gen_form_col (s : sol) y l :
   (Z.of_nat (size s) * Z.of_nat (size s) < Int63Axioms.wB)%Z ->
   y < size s ->
   count (get_col s y) = l ->
-  interp (fun u => let: (i, j) := to_ij (nat2int (size s)) u in
-                   get_xy s i j)
+  interp (f_interp (size s) s)
          (gen_form (fun i => varb (i * nat2int (size s) + nat2int y))
                l (size s)).
 Proof.
@@ -1057,85 +1057,9 @@ have : get_xy s (size u) y = a.
   by rewrite nth_rcons ltnn eqxx.
 have Hl1 : size u < size s.
   by apply: leq_trans Hl; rewrite size_rcons.
-have F1 : (0 <= Z.of_nat (size s) < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  by apply: BigNumPrelude.Zsquare_le.
-have F2 : (0 <= Z.of_nat y < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  have [_ F2] := F1.
-  apply: Z.le_lt_trans F2.
-  by apply/inj_le/leP/ltnW.
-have F3 : (0 <= Z.of_nat (size u) < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : Z.of_nat (size s) <= _)%Z.
-    by apply/inj_le/leP/ltnW.
-  by apply: BigNumPrelude.Zsquare_le.
-have F4 : (0 <= Z.of_nat (size u) * Z.of_nat (size s) < Int63Axioms.wB)%Z.
-  split.
-    by apply: Z.mul_nonneg_nonneg; apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  apply: Zmult_le_compat_r.
-    by apply/inj_le/leP/ltnW.
-  by apply: Zle_0_nat.
-have F6 : (0 <= Z.of_nat (size u) * Z.of_nat (size s) +
- Z.of_nat y < Int63Axioms.wB)%Z.
-  split.
-    apply: Z.add_nonneg_nonneg; try apply: Zle_0_nat.
-    by apply: Z.mul_nonneg_nonneg; apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : ((Z.of_nat (size u) + 1) * Z.of_nat (size s)  <= _)%Z).
-    rewrite Z.mul_add_distr_r Z.mul_1_l.
-    apply: Zplus_le_compat_l.
-    by apply/inj_le/leP/ltnW.
-  apply: Zmult_le_compat_r; last by apply: Zle_0_nat.
-  have-> : (Z.of_nat (size u) + 1 = Z.of_nat (size u).+1)%Z.
-    by rewrite Nat2Z.inj_succ Z.add_1_r.
-  by apply/inj_le/leP.
 case: {Ha Hv Hl}a.
-  rewrite add0n Int63Axioms.div_spec /nat2int.
-  rewrite Int63Axioms.add_spec /=.
-  rewrite Int63Axioms.mul_spec /=.
-  rewrite !Int63Properties.of_Z_spec /=.
-  rewrite !Zmod_small //.
-  rewrite Int63Axioms.mod_spec.
-  set u1 := Z.modulo; rewrite -{1}/u1.
-  rewrite Int63Axioms.add_spec.
-  rewrite Int63Axioms.mul_spec /=.
-  rewrite !Int63Properties.of_Z_spec.
-  rewrite !Zmod_small // {}/u1.
-  rewrite  Z.div_add_l; last first.
-    by case: (s) Hs.
-  rewrite Z.div_small; last first.
-    split; first by apply: Zle_0_nat.
-    by apply/inj_lt/ltP.
-  rewrite Z.add_0_r Nat2Z.id.
-  rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
-    by rewrite Nat2Z.id => ->.
-  split; first by apply: Zle_0_nat.
-  by apply/inj_lt/ltP.
-rewrite Int63Axioms.div_spec /nat2int.
-rewrite Int63Axioms.add_spec.
-rewrite Int63Axioms.mul_spec /=.
-rewrite !Int63Properties.of_Z_spec !add0n.
-rewrite !Zmod_small //.
-rewrite Int63Axioms.mod_spec.
-set u1 := Z.modulo; rewrite -{1}/u1.
-rewrite Int63Axioms.add_spec.
-rewrite Int63Axioms.mul_spec /=.
-rewrite !Int63Properties.of_Z_spec.
-rewrite !Zmod_small // {}/u1.
-rewrite Z.div_add_l; last first.
-  by case: (s) Hs.
-rewrite Z.div_small; last first.
-  split; first by apply: Zle_0_nat.
-  by apply/inj_lt/ltP.
-rewrite Z.add_0_r Nat2Z.id.
-rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
-  by rewrite Nat2Z.id => ->.
-split; first by apply: Zle_0_nat.
-by apply/inj_lt/ltP.
+  by rewrite add0n f_interpE.
+by rewrite add0n f_interpE // => ->.
 Qed.
 
 (*****************************************************************************)
@@ -1154,15 +1078,15 @@ Definition pgen_form (pp : seq (option colour)) f l d :=
                   (if b then (f i) else negb (f i)))
               (zip (int_iota 0 d) l)))  ll).
 
+
 Lemma interp_pgen_form_row n (s : sol) pp x l :
   (Z.of_nat n * Z.of_nat n < Int63Axioms.wB)%Z ->
   x < n ->
   entail n pp s ->
   count (get_row s x) = l ->
-  interp (fun u => let: (i, j) := to_ij (nat2int n) u in
-                   get_xy s i j)
+  interp (f_interp n s)
          (pgen_form (pget_row pp x) 
-                (fun i => varb (nat2int (x * n) + i))
+                (fun i => varb (nat2int x * nat2int n + i))
                l n).
 Proof.
 move=> Hm Hs He H.
@@ -1207,75 +1131,9 @@ have : get_xy s x (size u) = a.
   by rewrite nth_rcons ltnn eqxx.
 have Hl1 : size u < n.
   by apply: leq_trans Hl; rewrite size_rcons.
-have F1 : (0 <= Z.of_nat n < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  by apply: BigNumPrelude.Zsquare_le.
-have F2 : (0 <= Z.of_nat (size u) < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : Z.of_nat n <= _)%Z.
-    by apply/inj_le/leP/ltnW.
-  by apply: BigNumPrelude.Zsquare_le.
-have F3 : (0 <= Z.of_nat (x * n) < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  rewrite Nat2Z.inj_mul.
-  apply: Z.le_lt_trans Hm.
-  apply: Zmult_le_compat_r.
-    by apply/inj_le/leP/ltnW.
-  by apply: Zle_0_nat.
-have F4 : (0 <= Z.of_nat (x * n) + Z.of_nat (size u) <
- Int63Axioms.wB)%Z.
-  split; first by apply: Z.add_nonneg_nonneg; apply: Zle_0_nat.
-  rewrite Nat2Z.inj_mul.
-  apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : ((Z.of_nat x + 1) * Z.of_nat n  <= _)%Z).
-    rewrite Z.mul_add_distr_r Z.mul_1_l.
-    apply: Zplus_le_compat_l.
-    by apply/inj_le/leP/ltnW.
-  apply: Zmult_le_compat_r; last by apply: Zle_0_nat.
-  have-> : (Z.of_nat x + 1 = Z.of_nat x.+1)%Z.
-    by rewrite Nat2Z.inj_succ Z.add_1_r.
-  by apply/inj_le/leP.
 case: {Ha Hv Hl}a.
-  rewrite Int63Axioms.div_spec /nat2int.
-  rewrite Int63Axioms.add_spec.
-  rewrite !Int63Properties.of_Z_spec !add0n.
-  rewrite !Zmod_small //.
-  rewrite Int63Axioms.mod_spec.
-  set u1 := Z.modulo; rewrite -{1}/u1.
-  rewrite Int63Axioms.add_spec.
-  rewrite !Int63Properties.of_Z_spec.
-  rewrite !Zmod_small // {}/u1.
-  rewrite !Nat2Z.inj_mul Z.div_add_l; last first.
-    by case: (n) Hl1.
-  rewrite Z.div_small; last first.
-    split; first by apply: Zle_0_nat.
-    by apply/inj_lt/ltP.
-  rewrite Z.add_0_r Nat2Z.id.
-  rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
-    by rewrite Nat2Z.id => ->.
-  split; first by apply: Zle_0_nat.
-  by apply/inj_lt/ltP.
-rewrite Int63Axioms.div_spec /nat2int.
-rewrite Int63Axioms.add_spec.
-rewrite !Int63Properties.of_Z_spec !add0n.
-rewrite !Zmod_small //.
-rewrite Int63Axioms.mod_spec.
-set u1 := Z.modulo; rewrite -{1}/u1.
-rewrite Int63Axioms.add_spec.
-rewrite !Int63Properties.of_Z_spec.
-rewrite !Zmod_small // {}/u1.
-rewrite !Nat2Z.inj_mul Z.div_add_l; last first.
-  by case: (n) Hl1.
-rewrite Z.div_small; last first.
-  split; first by apply: Zle_0_nat.
-  by apply/inj_lt/ltP.
-rewrite Z.add_0_r Nat2Z.id.
-rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
-  by rewrite Nat2Z.id => ->.
-split; first by apply: Zle_0_nat.
-by apply/inj_lt/ltP.
+  by rewrite add0n f_interpE.
+by rewrite add0n f_interpE // => ->.
 Qed.
 
 Lemma interp_pgen_form_col n (s : sol) pp y l :
@@ -1283,8 +1141,7 @@ Lemma interp_pgen_form_col n (s : sol) pp y l :
   y < n ->
   entail n pp s ->
   count (get_col s y) = l ->
-  interp (fun u => let: (i, j) := to_ij (nat2int n) u in
-                   get_xy s i j)
+  interp (f_interp n s)
          (pgen_form (pget_col pp y) 
                 (fun i => varb (i * nat2int n + nat2int y))
                l n).
@@ -1333,85 +1190,9 @@ have : get_xy s (size u) y = a.
   by rewrite nth_rcons ltnn eqxx.
 have Hl1 : size u < n.
   by apply: leq_trans Hl; rewrite size_rcons.
-have F1 : (0 <= Z.of_nat n < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  by apply: BigNumPrelude.Zsquare_le.
-have F2 : (0 <= Z.of_nat y < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  have [_ F2] := F1.
-  apply: Z.le_lt_trans F2.
-  by apply/inj_le/leP/ltnW.
-have F3 : (0 <= Z.of_nat (size u) < Int63Axioms.wB)%Z.
-  split; first by apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : Z.of_nat n <= _)%Z.
-    by apply/inj_le/leP/ltnW.
-  by apply: BigNumPrelude.Zsquare_le.
-have F4 : (0 <= Z.of_nat (size u) * Z.of_nat n < Int63Axioms.wB)%Z.
-  split.
-    by apply: Z.mul_nonneg_nonneg; apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  apply: Zmult_le_compat_r.
-    by apply/inj_le/leP/ltnW.
-  by apply: Zle_0_nat.
-have F6 : (0 <= Z.of_nat (size u) * Z.of_nat n +
- Z.of_nat y < Int63Axioms.wB)%Z.
-  split.
-    apply: Z.add_nonneg_nonneg; try apply: Zle_0_nat.
-    by apply: Z.mul_nonneg_nonneg; apply: Zle_0_nat.
-  apply: Z.le_lt_trans Hm.
-  apply: Z.le_trans (_ : ((Z.of_nat (size u) + 1) * Z.of_nat n  <= _)%Z).
-    rewrite Z.mul_add_distr_r Z.mul_1_l.
-    apply: Zplus_le_compat_l.
-    by apply/inj_le/leP/ltnW.
-  apply: Zmult_le_compat_r; last by apply: Zle_0_nat.
-  have-> : (Z.of_nat (size u) + 1 = Z.of_nat (size u).+1)%Z.
-    by rewrite Nat2Z.inj_succ Z.add_1_r.
-  by apply/inj_le/leP.
 case: {Ha Hv Hl}a.
-  rewrite add0n Int63Axioms.div_spec /nat2int.
-  rewrite Int63Axioms.add_spec /=.
-  rewrite Int63Axioms.mul_spec /=.
-  rewrite !Int63Properties.of_Z_spec /=.
-  rewrite !Zmod_small //.
-  rewrite Int63Axioms.mod_spec.
-  set u1 := Z.modulo; rewrite -{1}/u1.
-  rewrite Int63Axioms.add_spec.
-  rewrite Int63Axioms.mul_spec /=.
-  rewrite !Int63Properties.of_Z_spec.
-  rewrite !Zmod_small // {}/u1.
-  rewrite  Z.div_add_l; last first.
-    by case: (n) Hl1.
-  rewrite Z.div_small; last first.
-    split; first by apply: Zle_0_nat.
-    by apply/inj_lt/ltP.
-  rewrite Z.add_0_r Nat2Z.id.
-  rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
-    by rewrite Nat2Z.id => ->.
-  split; first by apply: Zle_0_nat.
-  by apply/inj_lt/ltP.
-rewrite Int63Axioms.div_spec /nat2int.
-rewrite Int63Axioms.add_spec.
-rewrite Int63Axioms.mul_spec /=.
-rewrite !Int63Properties.of_Z_spec !add0n.
-rewrite !Zmod_small //.
-rewrite Int63Axioms.mod_spec.
-set u1 := Z.modulo; rewrite -{1}/u1.
-rewrite Int63Axioms.add_spec.
-rewrite Int63Axioms.mul_spec /=.
-rewrite !Int63Properties.of_Z_spec.
-rewrite !Zmod_small // {}/u1.
-rewrite Z.div_add_l; last first.
-  by case: (n) Hl1.
-rewrite Z.div_small; last first.
-  split; first by apply: Zle_0_nat.
-  by apply/inj_lt/ltP.
-rewrite Z.add_0_r Nat2Z.id.
-rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
-  by rewrite Nat2Z.id => ->.
-split; first by apply: Zle_0_nat.
-by apply/inj_lt/ltP.
+  by rewrite add0n f_interpE.
+by rewrite add0n f_interpE // => ->.
 Qed.
 
 (*****************************************************************************)
@@ -1432,6 +1213,20 @@ Compute [seq (length (gen_constr i psize)) | i <- rows].
 Definition known_black :=  [::([::0], 0)].
 *)
 
+Section Problem.
+
+Record problem := Problem 
+  {p_size : nat; p_cols : seq (seq nat);
+   p_rows : seq (seq nat); p_known_black : seq (seq nat * nat)}.
+
+Variable pb : problem.
+
+Let psize := p_size pb.
+Let cols := p_cols pb.
+Let rows := p_rows pb. 
+Let known_black := p_known_black pb.
+
+(*
 
 Definition psize := 25. 
 
@@ -1494,6 +1289,7 @@ Definition known_black :=
    ([::6;7;10;14;15;18], 8);
    ([::6;11;16;20], 16);
    ([::3;4;9;10;15;20;21],21)].
+*)
 
 (*
 Definition psize := 4.
@@ -1516,7 +1312,7 @@ Definition rows :=
 Definition known_black : seq (seq nat * nat) := 
   [::].
 *)
-Compute [seq (length (gen_constr i 25)) | i <- cols].
+Compute [seq (length (gen_constr i psize)) | i <- cols].
 
 Definition verify_col s :=
   all (fun i => count (get_col s i) == nth [::] cols i) (iota 0 psize).
@@ -1532,13 +1328,21 @@ rewrite -val_enum_ord => /mapP /= [y Hy ->].
 by rewrite H.
 Qed.
 
+Hypothesis valid_rows_size : size rows = psize. 
+(*
 Lemma valid_rows_size : size rows = psize.
 Proof. by []. Qed.
+*)
 
+Hypothesis valid_cols_size : size cols = psize. 
+(*
 Lemma valid_cols_size : size cols = psize.
 Proof. by []. Qed.
+*)
 
-Compute [seq (length (gen_constr i 25)) | i <- rows].
+(*
+Compute [seq (length (gen_constr i psize)) | i <- rows].
+*)
 
 Definition verify_row s :=
   all (fun i => count (get_row s i) == nth [::] rows i) (iota 0 psize).
@@ -1566,15 +1370,28 @@ Lemma valid_count_suml d l :
   valid_count d l -> (size l).-1 + \sum_(i <- l) i  <= d.
 Proof. by move=> /andP[_]; rewrite foldl_addn. Qed.
 
+Hypothesis valid_count_rows : all (valid_count psize) rows.
+
+(*
 Lemma valid_count_rows : all (valid_count psize) rows.
 Proof. by compute. Qed.
+*)
 
+Hypothesis valid_count_cols : all (valid_count psize) cols.
+
+(*
 Lemma valid_count_cols : all (valid_count psize) cols.
 Proof. by compute. Qed.
+*)
 
+Hypothesis psize_fits_int : 
+  (Z.of_nat psize * Z.of_nat psize < Int63Axioms.wB)%Z.
+
+(*
 Lemma psize_fits_int : 
   (Z.of_nat psize * Z.of_nat psize < Int63Axioms.wB)%Z.
 Proof. by []. Qed.
+*)
 
 Definition verify_known_black s :=
   all (fun y => 
@@ -1597,16 +1414,34 @@ Definition valid_known_black :=
   all (fun y => 
           (y.2 < psize) && all (fun x => x < psize) y.1) known_black.
 
+Hypothesis valid_known_black_true : valid_known_black.
+
 Lemma valid_known_blackP : 
   forall x y l, x \in l -> (l, y) \in known_black -> x < psize /\ y < psize.
 Proof.
 move=> x y l xIl lyIk.
-have /allP/(_ _ lyIk)/andP[H1] : valid_known_black by [].
+have /allP/(_ _ lyIk)/andP[H1] := valid_known_black_true.
 by move=> /allP/(_ x xIl).
 Qed.
 
+Definition verify_square n (s : sol) :=
+  (size s == n) && (all (fun i => size i == n) s).
+
+Lemma verify_square_is_square n s :
+   verify_square n s = is_square n s.
+Proof.
+apply/andP/andP=> [[H1 /allP H2]|[H1 H2]]; split=> //.
+  apply/forallP => x.
+  by apply/H2/mem_nth; rewrite (eqP H1).
+apply/allP=> i Hi.
+have F : index i s < n.
+  by rewrite -(eqP H1) index_mem.
+have /forallP/(_ (Ordinal F)) := H2.
+by rewrite nth_index.
+Qed.
+
 Definition verify_sol s :=
- [&& is_square psize s, verify_col s,  verify_row s & verify_known_black s]. 
+ [&& verify_square psize s, verify_col s,  verify_row s & verify_known_black s]. 
 
 Lemma verify_solP s : 
   reflect
@@ -1619,9 +1454,11 @@ Lemma verify_solP s :
     (verify_sol s).
 Proof.
 apply: (iffP and4P)=> [[H1 H2 H3 H4]|[H1 H2 H3 H4]]; split => //.
+- by rewrite -verify_square_is_square.
 - by apply: verify_rowP.
 - by apply: verify_colP.
 - by apply: verify_known_blackP.
+- by rewrite verify_square_is_square.
 - by have /verify_colP := H3.
 - by have /verify_rowP := H2.
 by have /verify_known_blackP := H4.
@@ -1630,11 +1467,11 @@ Qed.
 Definition init_pp : psol := nseq psize (nseq psize None).
 
 Lemma init_pp_size : size init_pp = psize.
-Proof. by []. Qed.
+Proof. by rewrite size_nseq. Qed.
 
 Lemma init_pp_square : is_square psize init_pp.
 Proof.
-rewrite /is_square eqxx /=.
+rewrite /is_square init_pp_size eqxx /=.
 apply/forallP=> [[x]] /=.
 rewrite !nth_nseq => ->.
 by rewrite size_nseq.
@@ -1689,6 +1526,7 @@ Lemma pp_correct s : verify_sol s -> entail psize pp s.
 Proof.
 move=> /and4P[Hs _ _ /verify_known_blackP].
 rewrite /pp.
+rewrite verify_square_is_square in Hs.
 have := init_pp_entail s Hs.
 have := init_pp_square.
 move: valid_known_blackP.
@@ -1763,6 +1601,8 @@ Definition lpp pp := foldi (fun n psol =>
    if v is [::l] then
     (pset_row psol n [seq Some i | i <- l]) else psol) psize.-1 pp.
 
+Hypothesis psize_gt_0 : 0 < psize.
+
 Lemma lpp_correct p pp : 
   entail psize pp p -> 
   (forall i, i < psize -> count (get_row p i) = nth [::] rows i)->
@@ -1776,7 +1616,8 @@ elim: {-2}(_.-1) (leqnn (psize.-1)) pp Ep Cp => /=;
   move=> n IH Ln pp Ep Cp.
   apply: IH => //.
   - by apply: ltnW.
-  have := cl_correct pp p n.+1 Ep (Cp n.+1 Ln) Ln.
+  have Ln1 : n.+1 < psize by rewrite -(prednK psize_gt_0).
+  have := cl_correct pp p n.+1 Ep (Cp n.+1 Ln1) Ln1.
   case: cl => // a [|l] //.
   rewrite inE => /eqP<-.
   have /entailP[H1 H2 H3] := Ep.
@@ -1856,7 +1697,8 @@ elim: {-2}(_.-1) (leqnn (psize.-1)) pp Ep Cp => /=;
   move=> n IH Ln pp Ep Cp.
   apply: IH => //.
     by apply: ltnW.
-  have := cp_correct pp p n.+1 Ep (Cp n.+1 Ln) Ln.
+  have Ln1 : n.+1 < psize by rewrite -(prednK psize_gt_0).
+  have := cp_correct pp p n.+1 Ep (Cp n.+1 Ln1) Ln1.
   case: cp => // a [|l] //.
     rewrite inE => /eqP<-.
   have /entailP[H1 H2 H3] := Ep.
@@ -1998,5 +1840,142 @@ Proof.
 move=> Hv; rewrite [interp _ _]mk_andb_cons.
 rewrite gen_rows_correct; last by exact: Hv.
 by rewrite mk_andb_cons gen_cols_correct.
-Qed.
+Qed.   
+
+Definition test_eq (s1 s2 : sol) :=
+  andb 
+   [seq 
+      (andb 
+        [seq (if get_xy s1 i j then
+                 (varb (nat2int i * nat2int psize + nat2int j)) else
+                 (negb (varb (nat2int i * nat2int psize + nat2int j))))
+      | j <- iota 0 psize]) | i <- iota 0 psize].
+
+Lemma test_eq_correct s1 s2 :
+  verify_sol s1 -> verify_sol s2 ->
+  interp (f_interp s2) (test_eq s1 s2) -> s1 = s2.
+Proof.
+move=> Hs1 Hs2 Hi.
+have S1 : size s1 = psize.
+  by case/andP : Hs1 => [] [/andP[] /eqP].
+have S2 : size s2 = psize.
+  by case/andP : Hs2 => [] [/andP[] /eqP].
+apply: (@eq_from_nth _ ([::] : seq bool)); first by rewrite S2.
+move=> i H1i.
+have H2i : i < size s2 by rewrite S2 -S1.
+have : size (nth [::] s1 i) = psize.
+  by case/andP : Hs1 => [] /andP[_ /allP/(_ _ (mem_nth _ H1i))/eqP-> _].
+have : size (nth [::] s2 i) = psize.
+  by case/andP : Hs2 => [] /andP[_ /allP/(_ _ (mem_nth _ H2i))/eqP-> _].
+move: Hi.
+have: i \in iota 0 psize by rewrite mem_iota -S1.
+rewrite /test_eq.
+elim: {-2}iota => //= a l IH.
+rewrite mk_andb_cons !inE /= => /orP[/eqP->|H] /andP[H1 H2] H3 H4; last first.
+  by apply: IH.
+apply: (@eq_from_nth _ false); first by rewrite H4.
+move=> j Hj.
+move: H1.
+have: j \in iota 0 psize by rewrite mem_iota -H4.
+elim: iota => //= b l1 IH1.
+rewrite mk_andb_cons !inE => /orP[/eqP->|H1] /andP[V1 V2]; last first.
+  by apply: IH1.
+suff EE : 
+    get_xy s2 a b = interp (f_interp s2) 
+                     (varb (nat2int a * nat2int psize + nat2int b)).
+move: {V2}V1 EE.
+case E : get_xy; rewrite /f_interp /= => V1 V2.
+  by rewrite [LHS]E [RHS]V2 V1.
+by rewrite [LHS]E [RHS]V2 (negPf V1).
+
+  re
+
+
+rewrite [RHS]EE.
+
+
+move: {V2}V1.
+have F1 :
+  (0 <= Z.of_nat a * Z.of_nat psize + Z.of_nat b < Z.of_nat psize)%Z.
+  by admit.
+have F2 : 
+  (0 <= Z.of_nat b < Int63Axioms.wB)%Z.
+  by admit.
+have F3 : 
+  (0 <= Z.of_nat psize < Int63Axioms.wB)%Z.
+  by admit.
+have F4 : 
+  (0 <= Z.of_nat a < Int63Axioms.wB)%Z.
+  by admit.
+have F5 : 
+  (0 <= Z.of_nat a * Z.of_nat psize < Int63Axioms.wB)%Z.
+  by admit.
+have F6 : 
+  (0 <= Z.of_nat a * Z.of_nat psize + Z.of_nat b < Int63Axioms.wB)%Z.
+  by admit.
+  
+
+
+
+case E : get_xy; 
+  rewrite /f_interp /=
+          Int63Axioms.div_spec /nat2int
+          Int63Axioms.mod_spec
+          !Int63Axioms.add_spec
+          !Int63Axioms.mul_spec
+          !Int63Properties.of_Z_spec
+          2!Zmod_small //.
+rewrite [nth _ _ _]E.
+
+          !Int63Axioms.add_spec.
+
+rewrite !Zmod_small //.
+Search _ Z.of_nat muln.
+rewrite Z.div_add_l; last first.
+
+rewrite Int63Axioms.add_spec.
+rewrite Int63Axioms.mul_spec /=.
+rewrite !Int63Properties.of_Z_spec !add0n.
+rewrite !Zmod_small //.
+rewrite Int63Axioms.mod_spec.
+set u1 := Z.modulo; rewrite -{1}/u1.
+rewrite Int63Axioms.add_spec.
+rewrite Int63Axioms.mul_spec /=.
+rewrite !Int63Properties.of_Z_spec.
+rewrite !Zmod_small // {}/u1.
+rewrite Z.div_add_l; last first.
+  by case: (n) Hl1.
+rewrite Z.div_small; last first.
+  split; first by apply: Zle_0_nat.
+  by apply/inj_lt/ltP.
+rewrite Z.add_0_r Nat2Z.id.
+rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
+  by rewrite Nat2Z.id => ->.
+
+rewrite /interp /=.
+case E : get_xy => /= /andP[].
+rewrite /f_interp /=.
+
+
+have: i \in iota 0 psize by rewrite mem_iota -S1.
+
+move: H1.
+apply: (@eq_from_nth _ false).
+ first by rewrite S2.
+
+ => //.
+  rewrite IH //.
+
+
+Search andb.
+Search _ iota.
+
+
+Search _ nth size in seq.
+
+
+
+
+End Problem.
+
 
