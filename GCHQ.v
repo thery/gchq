@@ -197,23 +197,46 @@ by exists j.
 Qed.
 
 Definition mk_implb l := 
- foldl Datatypes.implb (head true l) (behead l).
+ foldr Datatypes.implb (head true l) (behead l).
 
-Fixpoint interp (f : int -> bool) exp {struct exp} := 
+Lemma mk_implb_nil : mk_implb nil = true.
+Proof. by []. Qed.
+
+Lemma mk_implb_one a :  mk_implb [::a] = a.
+Proof. by []. Qed.
+
+Section hinterp.
+
+Variable a_t : bool.
+Variable a_f : bool.
+Variable a_eq : bool -> bool -> bool.
+Variable a_and : list bool -> bool.
+Variable a_impl : list bool -> bool.
+Variable a_or : list bool -> bool.
+Variable a_neg : bool -> bool.
+Variable a_fun : int -> bool.
+
+Fixpoint hinterp exp {struct exp} := 
 match exp with
-|  trueb => Datatypes.true
-| falseb => Datatypes.false
-| eqb e1 e2 => Bool.eqb (interp f e1) (interp f e2)
+|  trueb => a_t
+| falseb => a_f
+| eqb e1 e2 => a_eq (hinterp e1) (hinterp e2)
 | andb es =>
-    let es1 := map (interp f) es in mk_andb es1
+    let es1 := seq.map hinterp es in a_and es1
 | implb es =>
-    let es1 := map (interp f) es in mk_implb es1
+    let es1 := seq.map hinterp es in a_impl es1
 | orb es =>
-    let es1 := map (interp f) es in
-    mk_orb es1
-| negb e1 => Datatypes.negb (interp f e1) 
-| varb i => f i
+    let es1 := seq.map hinterp es in
+    a_or es1
+| negb e1 => a_neg (hinterp e1) 
+| varb i => a_fun i
 end.
+
+End hinterp.
+
+Definition interp (f : int -> bool) exp  := 
+  hinterp Datatypes.true Datatypes.false
+     Bool.eqb mk_andb mk_implb mk_orb Datatypes.negb f exp.
 
 (*****************************************************************************)
 (*                                                                           *)
@@ -1017,8 +1040,8 @@ have : get_xy s x (size u) = a.
 have Hl1 : size u < size s.
   by apply: leq_trans Hl; rewrite size_rcons.
 case: {Ha Hv Hl}a.
-  by rewrite add0n f_interpE.
-by rewrite add0n f_interpE // => ->.
+  by rewrite /= add0n f_interpE.
+by rewrite /= add0n f_interpE // => ->.
 Qed.
 
 Lemma interp_gen_form_col (s : sol) y l :
@@ -1058,8 +1081,8 @@ have : get_xy s (size u) y = a.
 have Hl1 : size u < size s.
   by apply: leq_trans Hl; rewrite size_rcons.
 case: {Ha Hv Hl}a.
-  by rewrite add0n f_interpE.
-by rewrite add0n f_interpE // => ->.
+  by rewrite /= add0n f_interpE.
+by rewrite /= add0n f_interpE // => ->.
 Qed.
 
 (*****************************************************************************)
@@ -1132,8 +1155,8 @@ have : get_xy s x (size u) = a.
 have Hl1 : size u < n.
   by apply: leq_trans Hl; rewrite size_rcons.
 case: {Ha Hv Hl}a.
-  by rewrite add0n f_interpE.
-by rewrite add0n f_interpE // => ->.
+  by rewrite /= add0n f_interpE.
+by rewrite /= add0n f_interpE // => ->.
 Qed.
 
 Lemma interp_pgen_form_col n (s : sol) pp y l :
@@ -1191,8 +1214,8 @@ have : get_xy s (size u) y = a.
 have Hl1 : size u < n.
   by apply: leq_trans Hl; rewrite size_rcons.
 case: {Ha Hv Hl}a.
-  by rewrite add0n f_interpE.
-by rewrite add0n f_interpE // => ->.
+  by rewrite /= add0n f_interpE.
+by rewrite /= add0n f_interpE // => ->.
 Qed.
 
 (*****************************************************************************)
@@ -1202,22 +1225,11 @@ Qed.
 (*****************************************************************************)
 
 
-(*
-Definition psize := 2. 
-
-Definition cols := [::[::1]; [::1]]. 
-Definition rows := [::[::1]; [::1]].
-
-Compute [seq (length (gen_constr i psize)) | i <- rows].
-
-Definition known_black :=  [::([::0], 0)].
-*)
-
 Section Problem.
 
 Record problem := Problem 
   {p_size : nat; p_cols : seq (seq nat);
-   p_rows : seq (seq nat); p_known_black : seq (seq nat * nat)}.
+   p_rows : seq (seq nat); p_known_black : seq (nat * seq nat)}.
 
 Variable pb : problem.
 
@@ -1226,93 +1238,89 @@ Let cols := p_cols pb.
 Let rows := p_rows pb. 
 Let known_black := p_known_black pb.
 
-(*
+Definition pb1 : problem := {|
+p_size := 25;
+p_rows := [:: [:: 7; 3; 1; 1; 7];
+              [:: 1; 1; 2; 2; 1; 1];
+              [:: 1; 3; 1; 3; 1; 1; 3;
+                  1];
+              [:: 1; 3; 1; 1; 6; 1; 3;
+                  1];
+              [:: 1; 3; 1; 5; 2; 1; 3;
+                  1];
+              [:: 1; 1; 2; 1; 1];
+              [:: 7; 1; 1; 1; 1; 1; 7];
+              [:: 3; 3];
+              [:: 1; 2; 3; 1; 1; 3; 1;
+                  1; 2];
+              [:: 1; 1; 3; 2; 1; 1];
+              [:: 4; 1; 4; 2; 1; 2];
+              [:: 1; 1; 1; 1; 1; 4; 1;
+                  3];
+              [:: 2; 1; 1; 1; 2; 5];
+              [:: 3; 2; 2; 6; 3; 1];
+              [:: 1; 9; 1; 1; 2; 1];
+              [:: 2; 1; 2; 2; 3; 1];
+              [:: 3; 1; 1; 1; 1; 5; 1];
+              [:: 1; 2; 2; 5];
+              [:: 7; 1; 2; 1; 1; 1; 3];
+              [:: 1; 1; 2; 1; 2; 2; 1];
+              [:: 1; 3; 1; 4; 5; 1];
+              [:: 1; 3; 1; 3; 10; 2];
+              [:: 1; 3; 1; 1; 6; 6];
+              [:: 1; 1; 2; 1; 1; 2];
+              [:: 7; 2; 1; 2; 5]];
+p_cols := [:: [:: 7; 2; 1; 1; 7];
+              [:: 1; 1; 2; 2; 1; 1];
+              [:: 1; 3; 1; 3; 1; 3; 1;
+                  3; 1];
+              [:: 1; 3; 1; 1; 5; 1; 3;
+                  1];
+              [:: 1; 3; 1; 1; 4; 1; 3;
+                  1];
+              [:: 1; 1; 1; 2; 1; 1];
+              [:: 7; 1; 1; 1; 1; 1; 7];
+              [:: 1; 1; 3];
+              [:: 2; 1; 2; 1; 8; 2; 1];
+              [:: 2; 2; 1; 2; 1; 1; 1;
+                  2];
+              [:: 1; 7; 3; 2; 1];
+              [:: 1; 2; 3; 1; 1; 1; 1;
+                  1];
+              [:: 4; 1; 1; 2; 6];
+              [:: 3; 3; 1; 1; 1; 3; 1];
+              [:: 1; 2; 5; 2; 2];
+              [:: 2; 2; 1; 1; 1; 1; 1;
+                  2; 1];
+              [:: 1; 3; 3; 2; 1; 8; 1];
+              [:: 6; 2; 1];
+              [:: 7; 1; 4; 1; 1; 3];
+              [:: 1; 1; 1; 1; 4];
+              [:: 1; 3; 1; 3; 7; 1];
+              [:: 1; 3; 1; 1; 1; 2; 1;
+                  1; 4];
+              [:: 1; 3; 1; 4; 3; 3];
+              [:: 1; 1; 2; 2; 2; 6; 1];
+              [:: 7; 1; 3; 2; 1; 1]];
+p_known_black := [:: (3,[:: 3; 4; 12; 13;
+                          21]);
+                     (8, [:: 6; 7; 10; 14;
+                          15; 18]);
+                     (16, [:: 6; 11; 16; 20]);
+                     (21, [:: 3; 4; 9; 10;
+                          15; 20; 21])
+                     ] |}.
 
-Definition psize := 25. 
 
-Definition cols := 
-  [::[::7;2;1;1;7];
-     [::1;1;2;2;1;1];
-     [::1;3;1;3;1;3;1;3;1];
-     [::1;3;1;1;5;1;3;1];
-     [::1;3;1;1;4;1;3;1];
-     [::1;1;1;2;1;1];
-     [::7;1;1;1;1;1;7];
-     [::1;1;3];
-     [::2;1;2;1;8;2;1];
-     [::2;2;1;2;1;1;1;2];
-     [::1;7;3;2;1];
-     [::1;2;3;1;1;1;1;1];
-     [::4;1;1;2;6];
-     [::3;3;1;1;1;3;1];
-     [::1;2;5;2;2];
-     [::2;2;1;1;1;1;1;2;1];
-     [::1;3;3;2;1;8;1];
-     [::6;2;1];
-     [::7;1;4;1;1;3];
-     [::1;1;1;1;4];
-     [::1;3;1;3;7;1];
-     [::1;3;1;1;1;2;1;1;4];
-     [::1;3;1;4;3;3];
-     [::1;1;2;2;2;6;1];
-     [::7;1;3;2;1;1]].
+Definition pb2 : problem := {|
+p_size := 4;
+p_cols := [:: [::]; [:: 2]; [:: 2];
+              [::]];
+p_rows := [:: [::]; [:: 2]; [:: 2];
+              [::]];
+p_known_black := [::] 
+|}.
 
-Definition rows :=
-  [:: [::7;3;1;1;7];
-     [::1;1;2;2;1;1];
-     [::1;3;1;3;1;1;3;1];
-     [::1;3;1;1;6;1;3;1];
-     [::1;3;1;5;2;1;3;1];
-     [::1;1;2;1;1];
-     [::7;1;1;1;1;1;7];
-     [::3;3];
-     [::1;2;3;1;1;3;1;1;2];
-     [::1;1;3;2;1;1];
-     [::4;1;4;2;1;2];
-     [::1;1;1;1;1;4;1;3];
-     [::2;1;1;1;2;5];
-     [::3;2;2;6;3;1];
-     [::1;9;1;1;2;1];
-     [::2;1;2;2;3;1];
-     [::3;1;1;1;1;5;1];
-     [::1;2;2;5];
-     [::7;1;2;1;1;1;3];
-     [::1;1;2;1;2;2;1];
-     [::1;3;1;4;5;1];
-     [::1;3;1;3;10;2];
-     [::1;3;1;1;6;6];
-     [::1;1;2;1;1;2];
-     [::7;2;1;2;5]].
-
-Definition known_black := 
-  [::([::3;4;12;13;21], 3);
-   ([::6;7;10;14;15;18], 8);
-   ([::6;11;16;20], 16);
-   ([::3;4;9;10;15;20;21],21)].
-*)
-
-(*
-Definition psize := 4.
-Definition isize := nat2int psize. 
-
-Definition cols := 
-  [::[::];
-     [::2];
-     [::2];
-     [::]
-  ]. 
-
-Definition rows := 
-  [::[::];
-     [::2];
-     [::2];
-     [::]
-  ]. 
-
-Definition known_black : seq (seq nat * nat) := 
-  [::].
-*)
-Compute [seq (length (gen_constr i psize)) | i <- cols].
 
 Definition verify_col s :=
   all (fun i => count (get_col s i) == nth [::] cols i) (iota 0 psize).
@@ -1394,13 +1402,13 @@ Proof. by []. Qed.
 *)
 
 Definition verify_known_black s :=
-  all (fun y => 
-          all (fun x => ~~ get_xy s x y.2) y.1) known_black.
+  all (fun x => 
+          all (fun y => ~~ get_xy s x.1 y) x.2) known_black.
 
 
 Lemma verify_known_blackP s : 
   reflect (forall (x y : nat) (l : seq nat), 
-            x \in l -> (l, y) \in known_black ->
+            y \in l -> (x, l) \in known_black ->
             get_xy s x y = black)
           (verify_known_black s).
 Proof.
@@ -1411,17 +1419,17 @@ by rewrite (H _ _ _ xIl lyIb).
 Qed.
 
 Definition valid_known_black :=
-  all (fun y => 
-          (y.2 < psize) && all (fun x => x < psize) y.1) known_black.
+  all (fun x => 
+          (x.1 < psize) && all (fun y => y < psize) x.2) known_black.
 
 Hypothesis valid_known_black_true : valid_known_black.
 
 Lemma valid_known_blackP : 
-  forall x y l, x \in l -> (l, y) \in known_black -> x < psize /\ y < psize.
+  forall x y l, y \in l -> (x, l) \in known_black -> x < psize /\ y < psize.
 Proof.
-move=> x y l xIl lyIk.
-have /allP/(_ _ lyIk)/andP[H1] := valid_known_black_true.
-by move=> /allP/(_ x xIl).
+move=> x y l yIl xlIk.
+have /allP/(_ _ xlIk)/andP[H1] := valid_known_black_true.
+by move=> /allP/(_ y yIl).
 Qed.
 
 Definition verify_square n (s : sol) :=
@@ -1450,7 +1458,7 @@ Lemma verify_solP s :
         forall i : 'I_psize, count (get_row s i) = nth [::] rows i,
         forall j : 'I_psize, count (get_col s j) = nth [::] cols j &
         forall (x y : nat) (l : seq nat), 
-            x \in l -> (l, y) \in known_black -> get_xy s x y = black]
+            y \in l -> (x, l) \in known_black -> get_xy s x y = black]
     (verify_sol s).
 Proof.
 apply: (iffP and4P)=> [[H1 H2 H3 H4]|[H1 H2 H3 H4]]; split => //.
@@ -1492,22 +1500,22 @@ apply/forallP=> i; apply/forallP=> j; apply/forallP=> c.
 by rewrite init_pp_correct.
 Qed.
 
-Fixpoint vupdate s (l : seq nat) j  :=
-  if l is i :: l then
-  vupdate (pset_xy s i j (Some black)) l j else
+Fixpoint vupdate s (l : seq nat) i  :=
+  if l is j :: l then
+  vupdate (pset_xy s i j (Some black)) l i else
   s.
 
-Lemma vupdate_square n s l j : 
-  is_square n s -> is_square n (vupdate s l j).
+Lemma vupdate_square n s l i : 
+  is_square n s -> is_square n (vupdate s l i).
 Proof.
 elim: l s => //= a l IH s Hs.
 apply: IH.
 by apply: pset_xy_square.
 Qed.
 
-Fixpoint hupdate s (l : seq (seq nat * nat)) :=
-  if l is (vl,j) :: l then
-    hupdate (vupdate s vl j) l
+Fixpoint hupdate s (l : seq (nat * seq nat)) :=
+  if l is (i, vl) :: l then
+    hupdate (vupdate s vl i) l
   else s.
 
 Lemma hupdate_square n s l : 
@@ -1530,26 +1538,26 @@ rewrite verify_square_is_square in Hs.
 have := init_pp_entail s Hs.
 have := init_pp_square.
 move: valid_known_blackP.
-elim: known_black init_pp => //= [] [vl y] l IH s1 H1s1 H2s1 H3s1 H.
+elim: known_black init_pp => //= [] [x vl] l IH s1 H1s1 H2s1 H3s1 H.
 apply: IH => 
-    [x1 y1 l1 xIl1 l1y1Il|||x1 y1 l1 x1Il1 V1].
-- by apply: H1s1 xIl1 _; rewrite inE l1y1Il orbC.
+    [x1 y1 l1 y1Il1 x1l1Il|||x1 y1 l1 x1Il1 V1].
+- by apply: H1s1 y1Il1 _; rewrite inE x1l1Il orbC.
 - by apply: vupdate_square.
-- have: forall x, x \in vl -> get_xy s x y = black.
-    by move=> x Hx; apply: H Hx _; rewrite inE eqxx.
-  have: forall y1, y1 \in vl -> y1 < psize.
-    move=> u1 u1Ivl.
-    have [] // := H1s1 u1 y _ u1Ivl.
+- have: forall y, y \in vl -> get_xy s x y = black.
+    by move=> y Hy; apply: H Hy _; rewrite inE eqxx.
+  have: forall y, y \in vl -> y < psize.
+    move=> y yIvl.
+    have [] // := H1s1 x y _ yIvl.
     by rewrite inE eqxx.
   elim: (vl) s1 H1s1 H2s1 H3s1 => //= a l1 IH1 s1 H1s1 H2s1 H3s1 H1 H2.
-  have [F1 F2] : a < psize /\ y < psize.
+  have [F1 F2] : x < psize /\ a < psize.
     have F1 : a \in a :: l1 by rewrite inE eqxx.
     by apply: H1s1 F1 _; rewrite inE eqxx.
-  apply: IH1 => // [x1 u1 l2 x1Il2|||y1 h1Il1|x xIl1].
-  - rewrite !inE=> /orP[/andP[/= /eqP V1 /eqP ->]|V1].
+  apply: IH1 => // [x1 y1 l2 y1Il2|||y1 h1Il1|y yIl1].
+  - rewrite !inE=> /orP[/andP[/=  /eqP -> /eqP V1]|V1].
       split=> //.
-      by apply: H1; rewrite -V1 inE orbC x1Il2.
-    by apply: H1s1 x1Il2 _; rewrite inE orbC V1.
+      by apply: H1; rewrite -V1 inE orbC y1Il2.
+    by apply: H1s1 y1Il2 _; rewrite inE orbC V1.
   - by apply: pset_xy_square.
   - apply/entailP; split => // [|i j b Li Lj].
       by apply: pset_xy_square.
@@ -1560,7 +1568,7 @@ apply: IH =>
       by have /entailP[_ _] := H3s1; apply.
     by apply: H2; rewrite inE eqxx.
   - by apply: H1; rewrite inE orbC h1Il1.
-  by apply: H2; rewrite inE orbC xIl1.
+  by apply: H2; rewrite inE orbC yIl1.
 by apply: H x1Il1 _; rewrite inE orbC V1.
 Qed.
 
@@ -1773,10 +1781,6 @@ Proof.
 by move=> Hv; apply: iter_pp_correct => //; apply: pp_correct.
 Qed.
 
-Definition f_interp s x :=
-  let: (i, j) := to_ij (nat2int psize) x in
-                   get_xy s i j.
-
 Definition gen_cols pp :=
   andb 
     [seq  (pgen_form
@@ -1785,7 +1789,7 @@ Definition gen_cols pp :=
              (nth [::] cols j)) psize | j <- iota 0 psize].
 
 Lemma gen_cols_correct s :
-  verify_sol s -> interp (f_interp s) (gen_cols final_pp).
+  verify_sol s -> interp (f_interp psize s) (gen_cols final_pp).
 Proof.
 move=> Hv.
 rewrite /gen_cols.
@@ -1808,11 +1812,11 @@ Definition gen_rows pp :=
   andb 
     [seq  (pgen_form
              (pget_row pp i)
-             (fun j =>  varb (nat2int (i * psize) + j))
+             (fun j =>  varb (nat2int i * nat2int psize + j))
              (nth [::] rows i)) psize | i <- iota 0 psize].
 
 Lemma gen_rows_correct s :
-  verify_sol s -> interp (f_interp s) (gen_rows final_pp).
+  verify_sol s -> interp (f_interp psize s) (gen_rows final_pp).
 Proof.
 move=> Hv.
 rewrite /gen_rows.
@@ -1835,11 +1839,11 @@ Definition gen_all :=
   andb [:: gen_rows final_pp; gen_cols final_pp].
 
 Lemma gen_all_correct s :
-  verify_sol s -> interp (f_interp s) gen_all.
+  verify_sol s -> interp (f_interp psize s) gen_all.
 Proof.
 move=> Hv; rewrite [interp _ _]mk_andb_cons.
-rewrite gen_rows_correct; last by exact: Hv.
-by rewrite mk_andb_cons gen_cols_correct.
+rewrite [X in X && _]gen_rows_correct; last by exact: Hv.
+by rewrite mk_andb_cons /= [X in X && _]gen_cols_correct.
 Qed.   
 
 Definition test_eq (s1 s2 : sol) :=
@@ -1853,7 +1857,7 @@ Definition test_eq (s1 s2 : sol) :=
 
 Lemma test_eq_correct s1 s2 :
   verify_sol s1 -> verify_sol s2 ->
-  interp (f_interp s2) (test_eq s1 s2) -> s1 = s2.
+  interp (f_interp psize s2) (test_eq s1 s2) -> s1 = s2.
 Proof.
 move=> Hs1 Hs2 Hi.
 have S1 : size s1 = psize.
@@ -1871,111 +1875,29 @@ move: Hi.
 have: i \in iota 0 psize by rewrite mem_iota -S1.
 rewrite /test_eq.
 elim: {-2}iota => //= a l IH.
-rewrite mk_andb_cons !inE /= => /orP[/eqP->|H] /andP[H1 H2] H3 H4; last first.
+rewrite mk_andb_cons !inE /= => /orP[/eqP Ha|H] /andP[H1 H2] H3 H4; last first.
   by apply: IH.
 apply: (@eq_from_nth _ false); first by rewrite H4.
 move=> j Hj.
 move: H1.
 have: j \in iota 0 psize by rewrite mem_iota -H4.
 elim: iota => //= b l1 IH1.
-rewrite mk_andb_cons !inE => /orP[/eqP->|H1] /andP[V1 V2]; last first.
+rewrite mk_andb_cons !inE => /orP[/eqP Hb|H1] /andP[V1 V2]; last first.
   by apply: IH1.
 suff EE : 
-    get_xy s2 a b = interp (f_interp s2) 
-                     (varb (nat2int a * nat2int psize + nat2int b)).
-move: {V2}V1 EE.
-case E : get_xy; rewrite /f_interp /= => V1 V2.
-  by rewrite [LHS]E [RHS]V2 V1.
-by rewrite [LHS]E [RHS]V2 (negPf V1).
-
-  re
-
-
-rewrite [RHS]EE.
-
-
-move: {V2}V1.
-have F1 :
-  (0 <= Z.of_nat a * Z.of_nat psize + Z.of_nat b < Z.of_nat psize)%Z.
-  by admit.
-have F2 : 
-  (0 <= Z.of_nat b < Int63Axioms.wB)%Z.
-  by admit.
-have F3 : 
-  (0 <= Z.of_nat psize < Int63Axioms.wB)%Z.
-  by admit.
-have F4 : 
-  (0 <= Z.of_nat a < Int63Axioms.wB)%Z.
-  by admit.
-have F5 : 
-  (0 <= Z.of_nat a * Z.of_nat psize < Int63Axioms.wB)%Z.
-  by admit.
-have F6 : 
-  (0 <= Z.of_nat a * Z.of_nat psize + Z.of_nat b < Int63Axioms.wB)%Z.
-  by admit.
-  
-
-
-
-case E : get_xy; 
-  rewrite /f_interp /=
-          Int63Axioms.div_spec /nat2int
-          Int63Axioms.mod_spec
-          !Int63Axioms.add_spec
-          !Int63Axioms.mul_spec
-          !Int63Properties.of_Z_spec
-          2!Zmod_small //.
-rewrite [nth _ _ _]E.
-
-          !Int63Axioms.add_spec.
-
-rewrite !Zmod_small //.
-Search _ Z.of_nat muln.
-rewrite Z.div_add_l; last first.
-
-rewrite Int63Axioms.add_spec.
-rewrite Int63Axioms.mul_spec /=.
-rewrite !Int63Properties.of_Z_spec !add0n.
-rewrite !Zmod_small //.
-rewrite Int63Axioms.mod_spec.
-set u1 := Z.modulo; rewrite -{1}/u1.
-rewrite Int63Axioms.add_spec.
-rewrite Int63Axioms.mul_spec /=.
-rewrite !Int63Properties.of_Z_spec.
-rewrite !Zmod_small // {}/u1.
-rewrite Z.div_add_l; last first.
-  by case: (n) Hl1.
-rewrite Z.div_small; last first.
-  split; first by apply: Zle_0_nat.
-  by apply/inj_lt/ltP.
-rewrite Z.add_0_r Nat2Z.id.
-rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
-  by rewrite Nat2Z.id => ->.
-
-rewrite /interp /=.
-case E : get_xy => /= /andP[].
-rewrite /f_interp /=.
-
-
-have: i \in iota 0 psize by rewrite mem_iota -S1.
-
-move: H1.
-apply: (@eq_from_nth _ false).
- first by rewrite S2.
-
- => //.
-  rewrite IH //.
-
-
-Search andb.
-Search _ iota.
-
-
-Search _ nth size in seq.
-
-
-
+    get_xy s2 i j = interp (f_interp psize s2) 
+                     (varb (nat2int i * nat2int psize + nat2int j)).
+  move: {V2}V1 EE.
+  rewrite -Ha -Hb.
+  case E : get_xy; rewrite /f_interp /= => V1 V2.
+    by rewrite [LHS]E [RHS]V2 V1.
+  by rewrite [LHS]E [RHS]V2 (negPf V1).
+rewrite /= f_interpE //.
+  by rewrite -S1.
+by rewrite -H4.
+Qed.
 
 End Problem.
+
 
 
