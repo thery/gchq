@@ -140,7 +140,7 @@ Fixpoint foldi {T1 : Type} (f : nat -> T1 -> T1) i r :=
 (*****************************************************************************)
 
 Inductive boolb := 
-|  trueb 
+| trueb 
 | falseb 
 | eqb (_ _ : boolb)
 | andb (_ : seq boolb) 
@@ -148,6 +148,7 @@ Inductive boolb :=
 | orb (_ : seq boolb) 
 | negb (_ : boolb) 
 | varb (_ : int).
+
 
 Definition mk_andb l := 
  foldl Datatypes.andb (head true l) (behead l).
@@ -205,6 +206,9 @@ Proof. by []. Qed.
 Lemma mk_implb_one a :  mk_implb [::a] = a.
 Proof. by []. Qed.
 
+Lemma mk_implb_two a b :  mk_implb [::b; a] = (Datatypes.implb a b).
+Proof. by []. Qed.
+
 Section hinterp.
 
 Variable a_t : bool.
@@ -214,29 +218,60 @@ Variable a_and : list bool -> bool.
 Variable a_impl : list bool -> bool.
 Variable a_or : list bool -> bool.
 Variable a_neg : bool -> bool.
-Variable a_fun : int -> bool.
 
-Fixpoint hinterp exp {struct exp} := 
+Fixpoint hinterp f exp {struct exp} := 
 match exp with
 |  trueb => a_t
 | falseb => a_f
-| eqb e1 e2 => a_eq (hinterp e1) (hinterp e2)
+| eqb e1 e2 => a_eq (hinterp f e1) (hinterp f e2)
 | andb es =>
-    let es1 := seq.map hinterp es in a_and es1
+    let es1 := map (hinterp f) es in a_and es1
 | implb es =>
-    let es1 := seq.map hinterp es in a_impl es1
+    let es1 := map (hinterp f) es in a_impl es1
 | orb es =>
-    let es1 := seq.map hinterp es in
+    let es1 := map (hinterp f) es in
     a_or es1
-| negb e1 => a_neg (hinterp e1) 
-| varb i => a_fun i
+| negb e1 => a_neg (hinterp f e1) 
+| varb i => f i
 end.
+
+Lemma hinterp_ext f1 f2 : 
+  f1 =1 f2 -> forall exp, hinterp f1 exp = hinterp f2 exp.
+Proof.
+move=> H.
+fix 1; case; try (by apply: erefl);
+  try ((move=> l; (congr a_and || congr a_impl || congr a_or);
+       move: l; fix 1; case); [apply: erefl | (move=> a l; congr (_ :: _));
+     [apply: hinterp_ext|apply: hinterp_ext0]]).
+- by move=> b1 b2 /=; congr (a_eq _ _); apply: hinterp_ext.
+- by move=> b; congr a_neg; apply: hinterp_ext.
+by move=> i; apply: H.
+Qed.
 
 End hinterp.
 
 Definition interp (f : int -> bool) exp  := 
   hinterp Datatypes.true Datatypes.false
      Bool.eqb mk_andb mk_implb mk_orb Datatypes.negb f exp.
+
+
+Definition zinterp (f : Z -> bool) exp  := 
+  hinterp Datatypes.true Datatypes.false
+     Bool.eqb mk_andb mk_implb mk_orb Datatypes.negb (f \o Int63Op.to_Z)  exp.
+
+Lemma interp_ext f1 f2 exp :
+  f1 =1 f2 -> interp f1 exp = interp f2 exp.
+Proof.  by move=> Hi; apply: hinterp_ext. Qed.
+
+Lemma interp_zinterp f exp :
+  interp f exp =
+  let zf := zinterp^~ exp in
+  let zf1 := f \o Int63Op.of_Z in zf zf1.
+Proof.
+apply: hinterp_ext => i /=.
+by rewrite Int63Axioms.of_to_Z.
+Qed.
+
 
 (*****************************************************************************)
 (*                                                                           *)
@@ -936,6 +971,7 @@ Definition to_ij d u :=
   let i := Z.to_nat (Int63Op.to_Z (Int63Native.div u d)) in
   let j := Z.to_nat (Int63Op.to_Z (Int63Native.modulo u d)) in (i, j).
 
+
 Definition f_interp n s x :=
   let: (i, j) := to_ij (nat2int n) x in
                    get_xy s i j.
@@ -1003,7 +1039,27 @@ rewrite Z.add_comm Z_mod_plus_full Z.mod_small //.
 split; first by apply: Zle_0_nat.
 by apply/inj_lt/ltP.
 Qed.
-  
+
+Definition lf_interp :=
+  locked (fun n s u =>
+  (f_interp n s  (Int63Op.of_Z u))).
+
+Lemma lf_interpEn n s f :
+   interp (f_interp n s) f = interp (lf_interp n s \o Int63Op.to_Z) f.
+Proof.
+apply: interp_ext => i.
+rewrite /= /lf_interp; unlock.
+by rewrite Int63Axioms.of_to_Z.
+Qed.
+
+Definition finterp h1 h9 h2 h3 h4 h5 h6 h7 h8 :=
+  hinterp h2 h3 h4 h5 h6 h7 h8 h9 h1.
+
+Lemma finterpE h1 h2 h3 h4 h5 h6 h7 h8 h9 : 
+  finterp h1 h9 h2 h3 h4 h5 h6 h7 h8 =
+  hinterp h2 h3 h4 h5 h6 h7 h8 h9 h1.
+Proof. by []. Qed.
+
 Lemma interp_gen_form_row (s : sol) x l :
   size (get_row s x) = size s ->
   (Z.of_nat (size s) * Z.of_nat (size s) < Int63Axioms.wB)%Z ->
@@ -1846,33 +1902,31 @@ rewrite [X in X && _]gen_rows_correct; last by exact: Hv.
 by rewrite mk_andb_cons /= [X in X && _]gen_cols_correct.
 Qed.   
 
-Definition test_eq (s1 s2 : sol) :=
+Definition test_eq n (s1 s2 : sol) :=
   andb 
    [seq 
       (andb 
         [seq (if get_xy s1 i j then
-                 (varb (nat2int i * nat2int psize + nat2int j)) else
-                 (negb (varb (nat2int i * nat2int psize + nat2int j))))
-      | j <- iota 0 psize]) | i <- iota 0 psize].
+                 (varb (nat2int i * nat2int n + nat2int j)) else
+                 (negb (varb (nat2int i * nat2int n + nat2int j))))
+      | j <- iota 0 n]) | i <- iota 0 n].
 
-Lemma test_eq_correct s1 s2 :
-  verify_sol s1 -> verify_sol s2 ->
-  interp (f_interp psize s2) (test_eq s1 s2) -> s1 = s2.
+Lemma test_is_square_eq_correct n s1 s2 :
+  (Z.of_nat n * Z.of_nat n < Int63Axioms.wB)%Z ->
+  is_square n s1 -> is_square n s2 ->
+  interp (f_interp n s2) (test_eq n s1 s2) -> s1 = s2.
 Proof.
-move=> Hs1 Hs2 Hi.
-have S1 : size s1 = psize.
-  by case/andP : Hs1 => [] [/andP[] /eqP].
-have S2 : size s2 = psize.
-  by case/andP : Hs2 => [] [/andP[] /eqP].
-apply: (@eq_from_nth _ ([::] : seq bool)); first by rewrite S2.
-move=> i H1i.
-have H2i : i < size s2 by rewrite S2 -S1.
-have : size (nth [::] s1 i) = psize.
-  by case/andP : Hs1 => [] /andP[_ /allP/(_ _ (mem_nth _ H1i))/eqP-> _].
-have : size (nth [::] s2 i) = psize.
-  by case/andP : Hs2 => [] /andP[_ /allP/(_ _ (mem_nth _ H2i))/eqP-> _].
+move=> Hn Hs1 Hs2 Hi.
+have S1 : size s1 = n by have /andP[/eqP] := Hs1.
+have S2 : size s2 = n by have /andP[/eqP] := Hs2.
+apply: (@eq_from_nth _ ([::] : seq bool))=> [|i H1i]; first by rewrite S2.
+have Hin : i < n by rewrite -S1.
+have : size (nth [::] s1 i) = n.
+  by case/andP : Hs1 => _ /forallP/(_ (Ordinal Hin))/eqP.
+have : size (nth [::] s2 i) = n.
+  by case/andP : Hs2 => _ /forallP/(_ (Ordinal Hin))/eqP.
 move: Hi.
-have: i \in iota 0 psize by rewrite mem_iota -S1.
+have: i \in iota 0 n by rewrite mem_iota -S1.
 rewrite /test_eq.
 elim: {-2}iota => //= a l IH.
 rewrite mk_andb_cons !inE /= => /orP[/eqP Ha|H] /andP[H1 H2] H3 H4; last first.
@@ -1880,21 +1934,34 @@ rewrite mk_andb_cons !inE /= => /orP[/eqP Ha|H] /andP[H1 H2] H3 H4; last first.
 apply: (@eq_from_nth _ false); first by rewrite H4.
 move=> j Hj.
 move: H1.
-have: j \in iota 0 psize by rewrite mem_iota -H4.
+have: j \in iota 0 n by rewrite mem_iota -H4.
 elim: iota => //= b l1 IH1.
 rewrite mk_andb_cons !inE => /orP[/eqP Hb|H1] /andP[V1 V2]; last first.
   by apply: IH1.
 suff EE : 
-    get_xy s2 i j = interp (f_interp psize s2) 
-                     (varb (nat2int i * nat2int psize + nat2int j)).
+    get_xy s2 i j = interp (f_interp n s2) 
+                     (varb (nat2int i * nat2int n + nat2int j)).
   move: {V2}V1 EE.
   rewrite -Ha -Hb.
   case E : get_xy; rewrite /f_interp /= => V1 V2.
     by rewrite [LHS]E [RHS]V2 V1.
   by rewrite [LHS]E [RHS]V2 (negPf V1).
 rewrite /= f_interpE //.
-  by rewrite -S1.
 by rewrite -H4.
+Qed.
+
+Lemma test_eq_correct s1 s2 :
+  verify_sol s1 -> verify_sol s2 ->
+  interp (f_interp psize s2)
+           (implb [:: test_eq psize s1 s2; gen_all]) -> s1 = s2.
+Proof.
+move=> Hs1 Hs2 Hi.
+apply: test_is_square_eq_correct psize_fits_int _ _ _.
+- by case/verify_solP : Hs1.
+- by case/verify_solP : Hs2.
+move: (gen_all_correct _ Hs2) Hi.
+rewrite /= mk_implb_two /= !mk_andb_cons !mk_andb_nil !andbT /=.
+by case: (_ && _).
 Qed.
 
 End Problem.

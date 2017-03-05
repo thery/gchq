@@ -25,7 +25,7 @@ Time Definition tt2 :=
 Ltac end_tac v :=
   let w := eval compute in v in
 idtac w;
-(timeout 20 (
+(timeout 30 (
     try (
      assert (Datatypes.implb tt2 ((tr w))); [
                           unfold tt2; verit | idtac]; 
@@ -51,9 +51,6 @@ Ltac row i n :=
                             row (i + 1)%Z n]
      end.
 
-Definition s : sol.
-row 0 (Z.of_nat (p_size pb)).
+Definition s0 : list bool.
+col 0 0 (Z.of_nat (p_size pb)).
 Defined.
-
-Compute verify_sol pb s.
-
